@@ -4,13 +4,17 @@ import config from '../config/index.js';
 import AdminRepository from '../repositories/AdminRepository.js';
 import SessionRepository from '../repositories/SessionRepository.js';
 
-export async function jwtAuth(req, _res, next) {
+function extractBearerToken(req) {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  return authHeader.split(' ')[1];
+}
+
+export async function jwtAuth(req, _res, next) {
+  const token = extractBearerToken(req);
+  if (!token) {
     return next(new AuthError('Missing or invalid authorization header'));
   }
-
-  const token = authHeader.split(' ')[1];
 
   try {
     const payload = jwt.verify(token, config.jwt.secret);
@@ -43,13 +47,11 @@ export async function jwtAuth(req, _res, next) {
 }
 
 export async function optionalJwtAuth(req, _res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const token = extractBearerToken(req);
+  if (!token) {
     req.admin = null;
     return next();
   }
-
-  const token = authHeader.split(' ')[1];
 
   try {
     const payload = jwt.verify(token, config.jwt.secret);

@@ -8,6 +8,13 @@ import JobManager from './jobs/JobManager.js';
 
 async function main() {
   let httpServer = http.createServer();
+  const sockets = new Set();
+
+  httpServer.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+  });
+
   await initializeDeps();
   const app = await createApp(httpServer);
 
@@ -33,15 +40,22 @@ async function main() {
   const gracefulShutdown = async (signal) => {
     logger.info({ signal }, 'Shutting down gracefully');
 
+    httpServer?.close(() => {
+      logger.info('[server] HTTP connections closed');
+    });
+
+    for (const socket of sockets) {
+      socket.destroy();
+    }
+    sockets.clear();
+
     const tasks = [
-      new Promise((resolve) => httpServer?.close(() => resolve())),
       mongoose.disconnect(),
       JobManager.stop(),
     ];
 
     if (botLaunched) tasks.push(bot.stop(signal));
 
-    // Hard timeout
     const timeout = setTimeout(() => {
       logger.error('Forced shutdown after timeout');
       process.exit(1);
