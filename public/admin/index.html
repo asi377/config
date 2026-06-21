@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HORNET | پنل مدیریت</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+@font-face{font-family:Vazirmatn;src:url(https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/fonts/webfonts/Vazirmatn-Medium.woff2) format('woff2')}
+:root{--bg:#0f172a;--bg2:#1e293b;--bg3:#334155;--text:#e2e8f0;--text2:#94a3b8;--accent:#f59e0b;--accent2:#d97706;--danger:#ef4444;--success:#22c55e;--info:#3b82f6;--radius:8px}
+body{font-family:Vazirmatn,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;overflow-x:hidden}
+.sidebar{width:240px;background:var(--bg2);display:flex;flex-direction:column;position:fixed;top:0;right:0;height:100vh;z-index:100;transition:transform .3s;border-left:1px solid rgba(255,255,255,.05)}
+.sidebar-header{padding:20px;border-bottom:1px solid rgba(255,255,255,.05);text-align:center}
+.sidebar-header h1{font-size:22px;color:var(--accent);letter-spacing:1px}
+.sidebar-header small{color:var(--text2);font-size:11px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:12px 20px;cursor:pointer;color:var(--text2);transition:all .2s;border-right:3px solid transparent;font-size:13px;user-select:none}
+.nav-item:hover,.nav-item.active{background:rgba(245,158,11,.08);color:var(--text);border-right-color:var(--accent)}
+.main{flex:1;margin-right:240px;padding:24px;min-height:100vh}
+.page-header{margin-bottom:24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+.page-header h2{font-size:22px;font-weight:600}
+.page-header p{color:var(--text2);font-size:13px;margin-top:4px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px}
+.card{background:var(--bg2);border-radius:var(--radius);padding:20px;border:1px solid rgba(255,255,255,.05)}
+.card .label{font-size:12px;color:var(--text2);margin-bottom:6px}
+.card .value{font-size:24px;font-weight:700}
+.card .value.green{color:var(--success)}.card .value.orange{color:var(--accent)}.card .value.blue{color:var(--info)}.card .value.red{color:var(--danger)}
+table{width:100%;border-collapse:collapse;background:var(--bg2);border-radius:var(--radius);overflow:hidden}
+th,td{padding:10px 14px;text-align:right;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px}
+th{background:var(--bg3);color:var(--text2);font-weight:500;font-size:12px;text-transform:uppercase}
+tr:hover{background:rgba(255,255,255,.02)}
+.badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;display:inline-block}
+.badge.active,.badge.approved,.badge.completed{background:rgba(34,197,94,.15);color:var(--success)}
+.badge.inactive,.badge.expired,.badge.rejected,.badge.cancelled{background:rgba(239,68,68,.15);color:var(--danger)}
+.badge.pending,.badge.open{background:rgba(245,158,11,.15);color:var(--accent)}
+.badge.closed{background:rgba(148,163,184,.15);color:var(--text2)}
+.badge.superadmin{background:rgba(239,68,68,.15);color:var(--danger)}
+.badge.admin{background:rgba(59,130,246,.15);color:var(--info)}
+.btn{padding:8px 18px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-family:inherit;transition:all .2s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--accent);color:#000}.btn-primary:hover{background:var(--accent2)}
+.btn-danger{background:var(--danger);color:#fff}.btn-danger:hover{opacity:.85}
+.btn-success{background:var(--success);color:#fff}.btn-success:hover{opacity:.85}
+.btn-info{background:var(--info);color:#fff;opacity:.9}.btn-info:hover{opacity:1}
+.btn-outline{background:transparent;border:1px solid var(--bg3);color:var(--text)}.btn-outline:hover{background:var(--bg3)}
+.btn-sm{padding:5px 12px;font-size:12px}
+input,select,textarea{background:var(--bg3);border:1px solid rgba(255,255,255,.1);color:var(--text);padding:10px 14px;border-radius:6px;font-size:13px;font-family:inherit;width:100%;outline:none;transition:border .2s}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:80px}
+table .actions{display:flex;gap:6px;flex-wrap:wrap}
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:200;display:none;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--bg2);border-radius:12px;padding:28px;width:90%;max-width:540px;max-height:90vh;overflow-y:auto}
+.modal h3{margin-bottom:16px;font-size:18px}
+.modal .form-group{margin-bottom:14px}
+.modal .form-group label{display:block;font-size:12px;color:var(--text2);margin-bottom:4px}
+.modal .form-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+.login-screen{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:300;display:flex;align-items:center;justify-content:center}
+.login-box{background:var(--bg2);padding:40px;border-radius:12px;width:90%;max-width:400px;text-align:center}
+.login-box h2{color:var(--accent);font-size:28px;margin-bottom:4px}
+.login-box p{color:var(--text2);margin-bottom:24px;font-size:13px}
+.login-box .form-group{text-align:right;margin-bottom:14px}
+.login-box .form-group label{display:block;font-size:12px;color:var(--text2);margin-bottom:4px}
+.section{display:none}
+.section.active{display:block}
+.empty-state{text-align:center;padding:40px;color:var(--text2);font-size:14px}
+.toolbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.toolbar input,.toolbar select{width:auto;min-width:180px}
+.pagination{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:16px;font-size:13px}.pagination button{padding:6px 14px;background:var(--bg3);border:none;color:var(--text);border-radius:4px;cursor:pointer}.pagination button:disabled{opacity:.4;cursor:default}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid rgba(255,255,255,.1);padding:12px 24px;border-radius:8px;z-index:400;display:none;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:90%}
+.toast.show{display:block}.toast.success{border-right:3px solid var(--success)}.toast.error{border-right:3px solid var(--danger)}.toast.warning{border-right:3px solid var(--accent)}
+pre{background:var(--bg3);padding:12px;border-radius:6px;overflow:auto;font-size:12px;max-height:300px;direction:ltr;text-align:left}
+code{background:var(--bg3);padding:2px 6px;border-radius:4px;font-size:12px}
+@media(max-width:768px){
+.sidebar{transform:translateX(240px)}.sidebar.open{transform:translateX(0)}
+.main{margin-right:0;padding:16px}.cards{grid-template-columns:1fr 1fr}
+}
+.loading{text-align:center;padding:40px;color:var(--text2)}
+.loading::after{content:'';display:inline-block;width:20px;height:20px;border:2px solid var(--text2);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;margin-right:8px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <div class="login-box">
+    <h2>HORNET</h2>
+    <p>پنل مدیریت سرویس VPN</p>
+    <div id="loginForm">
+      <div class="form-group"><label>ایمیل</label><input type="email" id="loginEmail" placeholder="ایمیل خود را وارد کنید" dir="ltr" style="text-align:left"></div>
+      <div class="form-group"><label>رمز عبور</label><input type="password" id="loginPassword" placeholder="رمز عبور" dir="ltr" style="text-align:left"></div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="handleLogin()">ورود به پنل</button>
+    </div>
+    <div id="loginForm2fa" style="display:none">
+      <p style="font-size:14px;margin-bottom:16px">کد تأیید دو مرحله‌ای را وارد کنید</p>
+      <div class="form-group"><label>کد 2FA</label><input type="text" id="login2faCode" placeholder="000000" dir="ltr" style="text-align:center;font-size:24px;letter-spacing:8px" maxlength="6"></div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="handleLogin2fa()">تأیید</button>
+    </div>
+    <div id="loginError" style="color:var(--danger);font-size:12px;margin-top:12px;display:none"></div>
+  </div>
+</div>
+
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <h1>HORNET</h1>
+    <small>پنل مدیریت</small>
+  </div>
+  <div style="padding:4px 0;flex:1;overflow-y:auto">
+    <div class="nav-item active" data-section="dashboard" onclick="showSection('dashboard',this)">داشبورد</div>
+    <div class="nav-item" data-section="users" onclick="showSection('users',this)">کاربران</div>
+    <div class="nav-item" data-section="plans" onclick="showSection('plans',this)">طرح‌ها</div>
+    <div class="nav-item" data-section="servers" onclick="showSection('servers',this)">سرورها</div>
+    <div class="nav-item" data-section="subscriptions" onclick="showSection('subscriptions',this)">اشتراک‌ها</div>
+    <div class="nav-item" data-section="receipts" onclick="showSection('receipts',this)">رسیدها</div>
+    <div class="nav-item" data-section="transactions" onclick="showSection('transactions',this)">تراکنش‌ها</div>
+    <div class="nav-item" data-section="promo" onclick="showSection('promo',this)">کد تخفیف</div>
+    <div class="nav-item" data-section="tickets" onclick="showSection('tickets',this)">تیکت‌ها</div>
+    <div class="nav-item" data-section="fraud" onclick="showSection('fraud',this)">تقلب</div>
+    <div class="nav-item" data-section="settings" onclick="showSection('settings',this)">تنظیمات</div>
+    <div class="nav-item" data-section="analytics" onclick="showSection('analytics',this)">آمار</div>
+    <div class="nav-item" data-section="admins" onclick="showSection('admins',this)">مدیران</div>
+  </div>
+  <div style="padding:12px 16px;border-top:1px solid rgba(255,255,255,.05);font-size:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div><span id="statusBadge" style="color:var(--success)">●</span> <span id="adminName" style="color:var(--text2)"></span></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-outline btn-sm" onclick="showSection('profile',document.querySelector('[data-section=profile]')||showProfile())">پروفایل</button>
+        <button class="btn btn-danger btn-sm" onclick="handleLogout()">خروج</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  <!-- Dashboard -->
+  <div class="section active" id="section-dashboard">
+    <div class="page-header"><h2>داشبورد</h2><p>خلاصه وضعیت سرویس</p></div>
+    <div class="cards" id="dashCards"></div>
+    <div style="background:var(--bg2);border-radius:var(--radius);padding:20px;border:1px solid rgba(255,255,255,.05)">
+      <h3 style="margin-bottom:12px;font-size:15px">وضعیت سرورها</h3>
+      <div id="serverHealth"></div>
+    </div>
+  </div>
+
+  <!-- Users -->
+  <div class="section" id="section-users">
+    <div class="page-header"><h2>کاربران</h2><p>مدیریت کاربران سرویس</p></div>
+    <div class="toolbar">
+      <input type="text" id="userSearch" placeholder="جستجوی کاربر..." oninput="debounceSearch()">
+      <select id="userRoleFilter" onchange="loadUsers()"><option value="">همه نقش‌ها</option><option value="user">کاربر</option><option value="superadmin">مدیر</option></select>
+      <button class="btn btn-primary" onclick="loadUsers()">بروزرسانی</button>
+    </div>
+    <div id="usersTableWrap"><div class="loading">در حال بارگذاری...</div></div>
+    <div class="pagination" id="usersPagination"></div>
+  </div>
+
+  <!-- Plans -->
+  <div class="section" id="section-plans">
+    <div class="page-header"><h2>طرح‌ها</h2><p>مدیریت طرح‌های اشتراک</p><button class="btn btn-primary" onclick="openPlanModal()">+ طرح جدید</button></div>
+    <div id="plansTableWrap"><div class="loading">در حال بارگذاری...</div></div>
+  </div>
+
+  <!-- Servers -->
+  <div class="section" id="section-servers">
+    <div class="page-header"><h2>سرورها</h2><p>لیست سرورهای فعال</p><button class="btn btn-primary" onclick="openServerModal()">+ سرور جدید</button></div>
+    <div id="serversTableWrap"><div class="loading">در حال بارگذاری...</div></div>
+  </div>
+
+  <!-- Subscriptions -->
+  <div class="section" id="section-subscriptions">
+    <div class="page-header"><h2>اشتراک‌ها</h2><p>لیست اشتراک‌های کاربران</p></div>
+    <div class="toolbar">
+      <select id="subStatusFilter" onchange="loadSubscriptions()"><option value="">همه وضعیت‌ها</option><option value="active">فعال</option><option value="expired">منقضی</option><option value="suspended">معلق</option><option value="pending_shared_payment">در انتظار</option></select>
+    </div>
+    <div id="subsTableWrap"><div class="loading">در حال بارگذاری...</div></div>
+  </div>
+
+  <!-- Receipts -->
+  <div class="section" id="section-receipts">
+    <div class="page-header"><h2>رسیدها</h2><p>مدیریت رسیدهای پرداخت</p></div>
+    <div class="toolbar">
+      <select id="receiptStatusFilter" onchange="loadReceipts()"><option value="">همه وضعیت‌ها</option><option value="pending">در انتظار</option><option value="approved">تایید شده</option><option value="rejected">رد شده</option></select>
+    </div>
+    <div id="receiptsTableWrap"><div class="loading">در حال بارگذاری...</div></div>
+  </div>
+
+  <!-- Transactions -->
+  <div class="section" id="section-transactions">
+    <div class="page-header"><h2>تراکنش‌ها</h2><p>تاریخچه مالی</p></div>
+    <div class="toolbar">
+      <select id="txTypeFilter" onchange="loadTransactions()"><option value="">همه نوع‌ها</option><option value="deposit">واریز</option><option value="payment">پرداخت</option><option value="refund">بازگشت</option><option value="admin_adjustment">تعدیل مدیر</option><option value="referral_bonus">پاداش معرفی</option></select>
+    </div>
+    <div id="transactionsTableWrap"><div class="loading">در حال بارگذاری...</div></div>
+    <div class="pagination" id="txPagination"></div>
+  </div>
+
+  <!-- Promo Codes -->
+  <div class="section" id="section-promo">
+    <div class="page-header"><h2>کدهای تخفیف</h2><p>مدیریت کدهای تخفیف</p><button class="btn btn-primary" onclick="openPromoModal()">+ کد جدید</button></div>
+    <div id="promoTableWrap"><div class="loading">در حال بارگذاری...</div></div>
+  </div>
+
+  <!-- Tickets -->
+  <div class="section" id="section-tickets">
+    <div class="page-header"><h2>تیکت‌ها</h2><p>پشتیبانی و تیکت‌ها</p></div>
+    <div id="ticketsTableWrap"><div class="loading">در حال بارگذاری...</div></div>
+  </div>
+
+  <!-- Fraud -->
+  <div class="section" id="section-fraud">
+    <div class="page-header"><h2>تقلب</h2><p>لاگ‌های تشخیص تقلب</p></div>
+    <div class="toolbar">
+      <select id="fraudSeverityFilter" onchange="loadFraudLogs()"><option value="">همه سطوح</option><option value="low">کم</option><option value="medium">متوسط</option><option value="high">زیاد</option><option value="critical">بحرانی</option></select>
+      <select id="fraudResolvedFilter" onchange="loadFraudLogs()"><option value="">همه وضعیت‌ها</option><option value="false">حل نشده</option><option value="true">حل شده</option></select>
+    </div>
+    <div id="fraudTableWrap"><div class="loading">در حال بارگذاری...</div></div>
+  </div>
+
+  <!-- Settings -->
+  <div class="section" id="section-settings">
+    <div class="page-header"><h2>تنظیمات</h2><p>مدیریت تنظیمات سرویس</p></div>
+    <div id="settingsTableWrap"><div class="loading">در حال بارگذاری...</div></div>
+  </div>
+
+  <!-- Analytics -->
+  <div class="section" id="section-analytics">
+    <div class="page-header"><h2>آمار و تحلیل</h2><p>داده‌های تحلیلی سرویس</p></div>
+    <div class="cards" id="analyticsCards"></div>
+    <div style="background:var(--bg2);border-radius:var(--radius);padding:20px;border:1px solid rgba(255,255,255,.05);margin-top:16px">
+      <h3 style="margin-bottom:12px;font-size:15px">محبوبیت سرورها</h3>
+      <div id="analyticsServerPop"></div>
+    </div>
+  </div>
+
+  <!-- Admins -->
+  <div class="section" id="section-admins">
+    <div class="page-header"><h2>مدیران سیستم</h2><p>مدیریت حساب‌های مدیر</p><button class="btn btn-primary" onclick="openAdminModal()">+ مدیر جدید</button></div>
+    <div id="adminsTableWrap"><div class="loading">در حال بارگذاری...</div></div>
+  </div>
+
+  <!-- Profile -->
+  <div class="section" id="section-profile">
+    <div class="page-header"><h2>پروفایل</h2><p>مدیریت حساب شخصی</p></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">
+      <div class="card"><h3 style="font-size:15px;margin-bottom:14px">تغییر رمز عبور</h3>
+        <div class="form-group"><label>رمز فعلی</label><input type="password" id="profileCurrentPw" dir="ltr"></div>
+        <div class="form-group"><label>رمز جدید</label><input type="password" id="profileNewPw" dir="ltr"></div>
+        <button class="btn btn-primary" onclick="changePassword()">تغییر رمز</button>
+      </div>
+      <div class="card"><h3 style="font-size:15px;margin-bottom:14px">احراز هویت دو مرحله‌ای</h3>
+        <p style="font-size:13px;color:var(--text2);margin-bottom:12px" id="profile2faStatus">وضعیت: غیرفعال</p>
+        <button class="btn btn-info" onclick="setup2fa()" id="profile2faSetupBtn">فعالسازی 2FA</button>
+        <div id="profile2faSection" style="display:none;margin-top:12px">
+          <pre id="profile2faSecret" style="direction:ltr;text-align:center;font-size:16px;margin-bottom:12px"></pre>
+          <div class="form-group"><label>کد تأیید</label><input type="text" id="profile2faCode" dir="ltr" style="text-align:center" maxlength="6"></div>
+          <button class="btn btn-success" onclick="enable2fa()">تأیید و فعالسازی</button>
+        </div>
+      </div>
+      <div class="card"><h3 style="font-size:15px;margin-bottom:14px">نشست‌های فعال</h3>
+        <div id="profileSessions"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const AUTH = '/api/auth';
+const API = '/api/enterprise';
+let state = { usersPage: 1, txPage: 1, userSearchQuery: '', admin: null, settings: [] };
+
+// ==== TOKEN MANAGEMENT ====
+function getAccessToken() { return localStorage.getItem('hornet_at'); }
+function getRefreshToken() { return localStorage.getItem('hornet_rt'); }
+function setTokens(at, rt) { localStorage.setItem('hornet_at', at); if (rt) localStorage.setItem('hornet_rt', rt); }
+function clearTokens() { localStorage.removeItem('hornet_at'); localStorage.removeItem('hornet_rt'); }
+
+async function api(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...opts.headers };
+  const token = getAccessToken();
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  let res = await fetch(path, { ...opts, headers });
+  if (res.status === 401 && getRefreshToken()) {
+    const refreshed = await tryRefresh();
+    if (refreshed) {
+      headers['Authorization'] = 'Bearer ' + getAccessToken();
+      res = await fetch(path, { ...opts, headers });
+    } else {
+      handleLogout();
+      throw new Error('نشست منقضی شده است. لطفاً مجدداً وارد شوید.');
+    }
+  }
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+async function tryRefresh() {
+  try {
+    const rt = getRefreshToken();
+    if (!rt) return false;
+    const res = await fetch(AUTH + '/refresh', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: rt }),
+    });
+    if (!res.ok) { clearTokens(); return false; }
+    const data = await res.json();
+    setTokens(data.data.accessToken, data.data.refreshToken);
+    return true;
+  } catch { clearTokens(); return false; }
+}
+
+// ==== AUTH ====
+function handleLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  if (!email || !password) { errEl.textContent = 'ایمیل و رمز عبور را وارد کنید'; errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+  fetch(AUTH + '/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  }).then(r => r.json()).then(res => {
+    if (!res.success) throw new Error(res.error);
+    if (res.data.requires2fa) {
+      localStorage.setItem('hornet_2fa_temp', res.data.tempToken);
+      document.getElementById('loginForm').style.display = 'none';
+      document.getElementById('loginForm2fa').style.display = 'block';
+    } else {
+      setTokens(res.data.accessToken, res.data.refreshToken);
+      document.getElementById('loginScreen').style.display = 'none';
+      initApp();
+    }
+  }).catch(err => {
+    errEl.textContent = err.message; errEl.style.display = 'block';
+  });
+}
+
+function handleLogin2fa() {
+  const code = document.getElementById('login2faCode').value.trim();
+  const tempToken = localStorage.getItem('hornet_2fa_temp');
+  const errEl = document.getElementById('loginError');
+  if (!code || !tempToken) return;
+  errEl.style.display = 'none';
+  fetch(AUTH + '/verify-2fa', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tempToken, code }),
+  }).then(r => r.json()).then(res => {
+    if (!res.success) throw new Error(res.error);
+    localStorage.removeItem('hornet_2fa_temp');
+    setTokens(res.data.accessToken, res.data.refreshToken);
+    document.getElementById('loginScreen').style.display = 'none';
+    initApp();
+  }).catch(err => {
+    errEl.textContent = err.message; errEl.style.display = 'block';
+  });
+}
+
+function handleLogout() {
+  const rt = getRefreshToken();
+  if (rt) {
+    fetch(AUTH + '/logout', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getAccessToken() },
+      body: JSON.stringify({ refreshToken: rt }),
+    }).catch(() => {});
+  }
+  clearTokens();
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('loginForm').style.display = 'block';
+  document.getElementById('loginForm2fa').style.display = 'none';
+  document.getElementById('loginEmail').value = '';
+  document.getElementById('loginPassword').value = '';
+  document.getElementById('login2faCode').value = '';
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('section-dashboard').classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelector('.nav-item').classList.add('active');
+}
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (type || '');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+// ==== SECTION NAVIGATION ====
+function showSection(name, el) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  const target = document.getElementById('section-' + name);
+  if (target) target.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  if (el) el.classList.add('active');
+  document.getElementById('sidebar').classList.remove('open');
+  const loaders = {
+    dashboard: loadDashboard, users: loadUsers, plans: loadPlans,
+    servers: loadServers, subscriptions: loadSubscriptions, receipts: loadReceipts,
+    transactions: loadTransactions, promo: loadPromoCodes, tickets: loadTickets,
+    fraud: loadFraudLogs, settings: loadSettings, analytics: loadAnalytics,
+    admins: loadAdmins, profile: loadProfile,
+  };
+  if (loaders[name]) loaders[name]();
+}
+
+function debounceSearch() {
+  clearTimeout(window._searchTimer);
+  window._searchTimer = setTimeout(() => {
+    state.userSearchQuery = document.getElementById('userSearch').value;
+    state.usersPage = 1; loadUsers();
+  }, 400);
+}
+
+function n(v) { return v?.toLocaleString?.('fa-IR') ?? v ?? 0; }
+function esc(s) { if (typeof s !== 'string') return s; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function closeModal() { document.getElementById('modalOverlay').classList.remove('show'); }
+function fmt(d) { return d ? new Date(d).toLocaleDateString('fa-IR') : '—'; }
+
+// ==== DASHBOARD ====
+async function loadDashboard() {
+  try {
+    const res = await api(API + '/dashboard');
+    const d = res.data || res;
+    document.getElementById('dashCards').innerHTML = `
+      <div class="card"><div class="label">کل کاربران</div><div class="value blue">${n(d.totalUsers)}</div></div>
+      <div class="card"><div class="label">اشتراک‌های فعال</div><div class="value green">${n(d.activeSubscriptions)}</div></div>
+      <div class="card"><div class="label">درآمد امروز</div><div class="value orange">${n(d.todayRevenue)} تومان</div></div>
+      <div class="card"><div class="label">پهنای باند امروز</div><div class="value info">${d.todayBandwidthGB || 0} GB</div></div>`;
+  } catch(e) {
+    document.getElementById('dashCards').innerHTML = '<div class="card"><div class="label">خطا</div><div class="value red">' + esc(e.message) + '</div></div>';
+  }
+  try {
+    const res = await api(API + '/servers');
+    const list = res.data || res;
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">';
+    (Array.isArray(list) ? list : []).forEach(s => {
+      const st = s.status === 'active' ? 'green' : s.status === 'maintenance' ? 'orange' : 'red';
+      const pct = s.loadPercent || 0;
+      html += '<div style="background:var(--bg3);padding:14px;border-radius:6px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+        + '<span>' + esc(s.name || 'N/A') + '</span>'
+        + '<span class="badge" style="background:rgba(' + (st==='green'?'34,197,94,.15':st==='orange'?'245,158,11,.15':'239,68,68,.15') + ');color:var(--' + st + ')">' + esc(s.status) + '</span></div>'
+        + '<div style="font-size:12px;color:var(--text2)">بار: ' + pct + '% | کاربران: ' + n(s.currentActiveUsers || 0) + '/' + n(s.maxCapacity) + '</div>'
+        + '</div>';
+    });
+    html += '</div>';
+    document.getElementById('serverHealth').innerHTML = html || '<div class="empty-state">سروری یافت نشد</div>';
+  } catch(e) {
+    document.getElementById('serverHealth').innerHTML = '<div class="empty-state">خطا در دریافت وضعیت</div>';
+  }
+}
+
+// ==== USERS ====
+async function loadUsers() {
+  const q = state.userSearchQuery;
+  const role = document.getElementById('userRoleFilter')?.value || '';
+  try {
+    let data, paginationHtml = '';
+    if (q) {
+      const res = await api(API + '/users/search/' + encodeURIComponent(q));
+      data = res.data || res;
+      if (Array.isArray(data) && data.length && data[0].telegramId === undefined) data = data.users || data;
+    } else {
+      let url = API + '/users?page=' + state.usersPage + '&limit=20';
+      if (role) url += '&role=' + role;
+      const res = await api(url);
+      const d = res.data || res;
+      data = d.users || d;
+      const pages = d.pages || Math.ceil((d.total || 0) / 20);
+      paginationHtml = '<button ' + (state.usersPage<=1?'disabled':'') + ' onclick="state.usersPage=' + (state.usersPage-1) + ';loadUsers()">قبلی</button>'
+        + '<span>صفحه ' + state.usersPage + ' از ' + pages + '</span>'
+        + '<button ' + (state.usersPage>=pages?'disabled':'') + ' onclick="state.usersPage=' + (state.usersPage+1) + ';loadUsers()">بعدی</button>';
+    }
+    document.getElementById('usersPagination').innerHTML = paginationHtml;
+    if (!Array.isArray(data)) data = [];
+    let html = '<table><thead><tr><th>ID</th><th>Telegram ID</th><th>کیف پول</th><th>نقش</th><th>عضویت</th><th>عملیات</th></tr></thead><tbody>';
+    data.forEach(u => {
+      const roleCls = u.role === 'superadmin' ? 'superadmin' : u.role === 'support' ? 'admin' : '';
+      html += '<tr><td>' + (u._id || '').slice(-6) + '</td><td>' + esc(u.telegramId || '—') + '</td>'
+        + '<td>' + n(u.walletBalance || 0) + '</td>'
+        + '<td><span class="badge ' + roleCls + '">' + esc(u.role || 'user') + '</span></td>'
+        + '<td>' + fmt(u.createdAt) + '</td>'
+        + '<td class="actions">'
+        + '<button class="btn btn-outline btn-sm" onclick="userDetail(\'' + u._id + '\')">جزئیات</button>'
+        + '<button class="btn btn-outline btn-sm" onclick="openWalletModal(\'' + u._id + '\',\'' + esc(u.telegramId) + '\')">کیف پول</button>'
+        + (u.role === 'banned' ? '<button class="btn btn-success btn-sm" onclick="unbanUser(\'' + u._id + '\')">رفع مسدودی</button>'
+          : '<button class="btn btn-danger btn-sm" onclick="banUser(\'' + u._id + '\')">مسدود</button>')
+        + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    if (!data.length) html = '<div class="empty-state">کاربری یافت نشد</div>';
+    document.getElementById('usersTableWrap').innerHTML = html;
+  } catch(e) { document.getElementById('usersTableWrap').innerHTML = '<div class="empty-state">خطا: ' + esc(e.message) + '</div>'; }
+}
+
+async function banUser(id) {
+  if (!confirm('کاربر مسدود شود؟ اشتراک‌های فعال معلق خواهند شد.')) return;
+  try { await api(API + '/users/' + id + '/ban', { method: 'POST' }); showToast('کاربر مسدود شد', 'success'); loadUsers(); } catch(e) { showToast(e.message, 'error'); }
+}
+async function unbanUser(id) {
+  try { await api(API + '/users/' + id + '/unban', { method: 'POST' }); showToast('مسدودی رفع شد', 'success'); loadUsers(); } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function userDetail(id) {
+  try {
+    const res = await api(API + '/users/' + id);
+    const u = res.data || res;
+    let txHtml = '';
+    try {
+      const txRes = await api(API + '/users/' + id + '/transactions');
+      const txs = txRes.data || txRes;
+      if (Array.isArray(txs) && txs.length) {
+        txHtml = '<h4 style="margin:16px 0 8px;font-size:14px">تراکنش‌ها</h4><table><thead><tr><th>نوع</th><th>مبلغ</th><th>تاریخ</th><th>توضیحات</th></tr></thead><tbody>';
+        txs.slice(0, 10).forEach(t => {
+          txHtml += '<tr><td>' + esc(t.type) + '</td><td>' + n(t.amount) + '</td><td>' + fmt(t.createdAt) + '</td><td>' + esc(t.description || '') + '</td></tr>';
+        });
+        txHtml += '</tbody></table>';
+      }
+    } catch(e) {}
+    document.getElementById('modalContent').innerHTML = `
+      <h3>جزئیات کاربر</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px;">
+        <div><strong>Telegram ID:</strong> ${esc(u.telegramId || '—')}</div>
+        <div><strong>نقش:</strong> ${esc(u.role || 'user')}</div>
+        <div><strong>کیف پول:</strong> ${n(u.walletBalance || 0)}</div>
+        <div><strong>کد معرف:</strong> ${esc(u.referralCode || '—')}</div>
+        <div><strong>تاریخ عضویت:</strong> ${fmt(u.createdAt)}</div>
+        <div><strong>کل مصرف:</strong> ${u.totalSpent ? n(u.totalSpent) : '0'}</div>
+      </div>
+      ${txHtml}
+      <div class="form-actions"><button class="btn btn-outline" onclick="closeModal()">بستن</button></div>`;
+    document.getElementById('modalOverlay').classList.add('show');
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function openWalletModal(id, tg) {
+  document.getElementById('modalContent').innerHTML = `
+    <h3>تنظیم کیف پول</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:16px">کاربر: ${esc(tg)}</p>
+    <div class="form-group"><label>مقدار (مثبت = افزایش، منفی = کاهش)</label><input type="number" id="walletAmount" step="any"></div>
+    <div class="form-group"><label>توضیحات</label><input type="text" id="walletDesc" placeholder="اختیاری"></div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeModal()">انصراف</button>
+      <button class="btn btn-primary" onclick="adjustWallet('${id}')">تایید</button>
+    </div>`;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+async function adjustWallet(id) {
+  const amount = parseFloat(document.getElementById('walletAmount').value);
+  if (isNaN(amount)) return showToast('مقدار معتبر وارد کنید', 'error');
+  try {
+    await api(API + '/users/' + id + '/wallet', {
+      method: 'POST', body: JSON.stringify({ amount, description: document.getElementById('walletDesc').value })
+    });
+    showToast('کیف پول به‌روز شد', 'success'); closeModal(); loadUsers();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+// ==== PLANS ====
+async function loadPlans() {
+  try {
+    const res = await api(API + '/plans');
+    const data = res.data || res;
+    if (!Array.isArray(data)) throw new Error('Invalid response');
+    let html = '<table><thead><tr><th>ترتیب</th><th>عنوان</th><th>نوع</th><th>قیمت‌ها</th><th>حجم/مدت</th><th>فروش</th><th>نمایش</th><th>عملیات</th></tr></thead><tbody>';
+    data.forEach(p => {
+      const pricing = (p.pricing || []).filter(x => x.enabled !== false).map(x => esc(x.currency) + ': ' + n(x.amount)).join('<br>') || n(p.basePrice);
+      const features = (p.features || []).slice(0, 3).map(esc).join('، ');
+      html += '<tr><td>' + (p.sortOrder ?? 100) + '</td><td><strong>' + esc(p.title) + '</strong><br><small>' + esc(p.subtitle || features || '') + '</small></td><td>' + esc(p.type) + '<br><small>' + esc(p.category || '') + '</small></td>'
+        + '<td>' + pricing + '</td><td>' + p.baseVolumeGB + ' GB / ' + p.durationDays + ' روز<br><small>' + (p.maxSubLinks || 1) + ' لینک</small></td>'
+        + '<td><span class="badge ' + (p.salesEnabled !== false ? 'active' : 'inactive') + '">' + (p.salesEnabled !== false ? 'فروش فعال' : 'فروش بسته') + '</span><br><span class="badge ' + (p.isActive !== false ? 'active' : 'inactive') + '">' + (p.isActive !== false ? 'فعال' : 'غیرفعال') + '</span></td>'
+        + '<td>' + esc(p.visibility || 'public') + '<br><small>' + esc((p.allowedRegions || []).join(', ') || 'همه مناطق') + '</small></td>'
+        + '<td class="actions">'
+        + '<button class="btn btn-outline btn-sm" onclick="openPlanModal(\'' + p._id + '\')">ویرایش</button>'
+        + '<button class="btn btn-outline btn-sm" onclick="clonePlan(\'' + p._id + '\')">کپی</button>'
+        + '<button class="btn btn-danger btn-sm" onclick="deletePlan(\'' + p._id + '\')">آرشیو</button>'
+        + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    if (!data.length) html = '<div class="empty-state">طرحی ثبت نشده است</div>';
+    document.getElementById('plansTableWrap').innerHTML = html;
+  } catch(e) { document.getElementById('plansTableWrap').innerHTML = '<div class="empty-state">خطا: ' + esc(e.message) + '</div>'; }
+}
+
+function openPlanModal(id) {
+  const isEdit = !!id;
+  let title = '', price = '0', volume = '10', duration = '30', type = 'economy', active = 'true', maxLinks = '1';
+  document.getElementById('modalContent').innerHTML = `
+    <h3>${isEdit ? 'ویرایش طرح' : 'طرح جدید'}</h3>
+    <div class="form-group"><label>عنوان</label><input type="text" id="planTitle" value="${esc(title)}"></div>
+    <div class="form-group"><label>زیرعنوان کوتاه</label><input type="text" id="planSubtitle" placeholder="مثلا مناسب مصرف روزانه"></div>
+    <div class="form-group"><label>توضیح کامل</label><textarea id="planDescription" rows="3" placeholder="متنی که در فروشگاه/بات نمایش داده می‌شود"></textarea></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>قیمت ریالی/تومانی پایه</label><input type="number" id="planPrice" value="${price}"></div>
+      <div class="form-group"><label>قیمت دلاری</label><input type="number" id="planUsdPrice" step="0.01" min="0" placeholder="مثلا 9.99"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>حجم (GB)</label><input type="number" id="planVolume" value="${volume}"></div>
+      <div class="form-group"><label>مدت (روز)</label><input type="number" id="planDuration" value="${duration}"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>نوع</label><select id="planType"><option value="economy">اقتصادی</option><option value="normal">معمولی</option><option value="vip">ویژه</option><option value="static_ip">IP ثابت</option></select></div>
+      <div class="form-group"><label>دسته‌بندی</label><input type="text" id="planCategory" placeholder="عمومی، گیم، تجاری"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>حداکثر زیرلینک</label><input type="number" id="planMaxLinks" value="${maxLinks}"></div>
+      <div class="form-group"><label>ترتیب نمایش</label><input type="number" id="planSortOrder" value="100"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>وضعیت پلن</label><select id="planActive"><option value="true">فعال</option><option value="false">غیرفعال</option></select></div>
+      <div class="form-group"><label>وضعیت فروش</label><select id="planSalesEnabled"><option value="true">قابل خرید</option><option value="false">فروش بسته</option></select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>نمایش</label><select id="planVisibility"><option value="public">عمومی</option><option value="private">خصوصی</option><option value="admin_only">فقط ادمین</option></select></div>
+      <div class="form-group"><label>تخفیف تمدید (%)</label><input type="number" id="planRenewalDiscount" min="0" max="100" value="0"></div>
+    </div>
+    <div class="form-group"><label>ویژگی‌ها (هر مورد با کاما جدا شود)</label><input type="text" id="planFeatures" placeholder="سرعت بالا، مناسب استریم، پشتیبانی VIP"></div>
+    <div class="form-group"><label>مناطق مجاز فروش</label><input type="text" id="planRegions" placeholder="IR, EU, US - خالی یعنی همه"></div>
+    <div class="form-group"><label>پروتکل‌ها</label><input type="text" id="planProtocols" value="vmess,vless,trojan"></div>
+    <div class="form-group"><label>تگ‌ها</label><input type="text" id="planTags" placeholder="popular, gaming, business"></div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeModal()">انصراف</button>
+      <button class="btn btn-primary" onclick="savePlan('${id||''}')">${isEdit ? 'بروزرسانی' : 'ایجاد'}</button>
+    </div>`;
+  document.getElementById('modalOverlay').classList.add('show');
+  if (isEdit) {
+    fetch(API + '/plans', { headers: { 'Authorization': 'Bearer ' + getAccessToken() } }).then(r => r.json()).then(res => {
+      const plans = res.data || res;
+      const p = (Array.isArray(plans) ? plans : []).find(x => x._id === id);
+      if (p) {
+        document.getElementById('planTitle').value = p.title || '';
+        document.getElementById('planSubtitle').value = p.subtitle || '';
+        document.getElementById('planDescription').value = p.description || '';
+        document.getElementById('planPrice').value = p.basePrice || 0;
+        const usd = (p.pricing || []).find(x => x.currency === 'USD');
+        document.getElementById('planUsdPrice').value = usd ? usd.amount : '';
+        document.getElementById('planVolume').value = p.baseVolumeGB || 0;
+        document.getElementById('planDuration').value = p.durationDays || 0;
+        document.getElementById('planType').value = p.type || 'economy';
+        document.getElementById('planCategory').value = p.category || '';
+        document.getElementById('planMaxLinks').value = p.maxSubLinks || 1;
+        document.getElementById('planSortOrder').value = p.sortOrder ?? 100;
+        document.getElementById('planActive').value = p.isActive !== false ? 'true' : 'false';
+        document.getElementById('planSalesEnabled').value = p.salesEnabled !== false ? 'true' : 'false';
+        document.getElementById('planVisibility').value = p.visibility || 'public';
+        document.getElementById('planRenewalDiscount').value = p.renewalDiscountPercent || 0;
+        document.getElementById('planFeatures').value = (p.features || []).join(', ');
+        document.getElementById('planRegions').value = (p.allowedRegions || []).join(', ');
+        document.getElementById('planProtocols').value = (p.allowedProtocols || []).join(', ');
+        document.getElementById('planTags').value = (p.tags || []).join(', ');
+      }
+    }).catch(() => {});
+  }
+}
+
+async function savePlan(id) {
+  const basePrice = parseFloat(document.getElementById('planPrice').value);
+  const usdPrice = parseFloat(document.getElementById('planUsdPrice').value);
+  const pricing = [{ currency: 'IRR', amount: basePrice, gateway: 'wallet', enabled: true }];
+  if (!isNaN(usdPrice) && usdPrice > 0) pricing.push({ currency: 'USD', amount: usdPrice, gateway: 'stripe', enabled: true });
+  const body = {
+    title: document.getElementById('planTitle').value,
+    subtitle: document.getElementById('planSubtitle').value,
+    description: document.getElementById('planDescription').value,
+    basePrice,
+    baseVolumeGB: parseFloat(document.getElementById('planVolume').value),
+    durationDays: parseInt(document.getElementById('planDuration').value),
+    type: document.getElementById('planType').value,
+    category: document.getElementById('planCategory').value || 'عمومی',
+    maxSubLinks: parseInt(document.getElementById('planMaxLinks').value) || 1,
+    sortOrder: parseInt(document.getElementById('planSortOrder').value) || 100,
+    isActive: document.getElementById('planActive').value === 'true',
+    salesEnabled: document.getElementById('planSalesEnabled').value === 'true',
+    visibility: document.getElementById('planVisibility').value,
+    renewalDiscountPercent: parseFloat(document.getElementById('planRenewalDiscount').value) || 0,
+    features: csv('planFeatures'),
+    allowedRegions: csv('planRegions'),
+    allowedProtocols: csv('planProtocols'),
+    tags: csv('planTags'),
+    pricing
+  };
+  if (!body.title || isNaN(body.basePrice)) return showToast('عنوان و قیمت الزامی است', 'error');
+  try {
+    if (id) {
+      await api(API + '/plans/' + id, { method: 'PUT', body: JSON.stringify(body) });
+      showToast('طرح بروزرسانی شد', 'success');
+    } else {
+      await api(API + '/plans', { method: 'POST', body: JSON.stringify(body) });
+      showToast('طرح ایجاد شد', 'success');
+    }
+    closeModal(); loadPlans();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function deletePlan(id) {
+  if (!confirm('این طرح آرشیو و از فروش خارج شود؟')) return;
+  try { await api(API + '/plans/' + id, { method: 'DELETE' }); showToast('طرح آرشیو شد', 'success'); loadPlans(); } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function clonePlan(id) {
+  try { await api(API + '/plans/' + id + '/clone', { method: 'POST' }); showToast('نسخه کپی طرح ساخته شد', 'success'); loadPlans(); } catch(e) { showToast(e.message, 'error'); }
+}
+
+function csv(id) {
+  return document.getElementById(id).value.split(',').map(x => x.trim()).filter(Boolean);
+}
+
+// ==== SERVERS ====
+async function loadServers() {
+  try {
+    const res = await api(API + '/servers');
+    const data = res.data || res;
+    if (!Array.isArray(data)) throw new Error('Invalid response');
+    let html = '<table><thead><tr><th>نام</th><th>IP</th><th>پورت</th><th>بار</th><th>وضعیت</th><th>فروش</th><th>عملیات</th></tr></thead><tbody>';
+    data.forEach(s => {
+      html += '<tr><td>' + esc(s.name) + '</td><td>' + esc(s.ipAddress) + '</td><td>' + s.port + '</td>'
+        + '<td>' + (s.loadPercent || 0) + '%</td>'
+        + '<td><span class="badge ' + (s.status === 'active' ? 'active' : 'inactive') + '">' + esc(s.status) + '</span></td>'
+        + '<td>' + (s.salesEnabled !== false ? 'فعال' : 'غیرفعال') + '</td>'
+        + '<td class="actions">'
+        + '<button class="btn btn-outline btn-sm" onclick="toggleServerSales(\'' + s._id + '\')">فروش</button>'
+        + '<button class="btn btn-danger btn-sm" onclick="deleteServer(\'' + s._id + '\')">حذف</button>'
+        + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    if (!data.length) html = '<div class="empty-state">سروری یافت نشد</div>';
+    document.getElementById('serversTableWrap').innerHTML = html;
+  } catch(e) { document.getElementById('serversTableWrap').innerHTML = '<div class="empty-state">خطا: ' + esc(e.message) + '</div>'; }
+}
+
+function openServerModal() {
+  document.getElementById('modalContent').innerHTML = `
+    <h3>سرور جدید</h3>
+    <div class="form-group"><label>نام</label><input type="text" id="srvName"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>IP</label><input type="text" id="srvIp" dir="ltr"></div>
+      <div class="form-group"><label>پورت</label><input type="number" id="srvPort" value="443"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>پورت Xray API</label><input type="number" id="srvXrayPort" value="10085"></div>
+      <div class="form-group"><label>ظرفیت</label><input type="number" id="srvCapacity" value="100"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeModal()">انصراف</button>
+      <button class="btn btn-primary" onclick="saveServer()">ایجاد</button>
+    </div>`;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+async function saveServer() {
+  const body = {
+    name: document.getElementById('srvName').value,
+    ipAddress: document.getElementById('srvIp').value,
+    port: parseInt(document.getElementById('srvPort').value),
+    xrayApiPort: parseInt(document.getElementById('srvXrayPort').value),
+    maxCapacity: parseInt(document.getElementById('srvCapacity').value),
+  };
+  if (!body.name || !body.ipAddress) return showToast('نام و IP الزامی است', 'error');
+  try {
+    await api(API + '/servers', { method: 'POST', body: JSON.stringify(body) });
+    showToast('سرور ایجاد شد', 'success'); closeModal(); loadServers();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function toggleServerSales(id) {
+  try { await api(API + '/servers/' + id + '/sales', { method: 'PATCH' }); showToast('وضعیت فروش تغییر کرد', 'success'); loadServers(); } catch(e) { showToast(e.message, 'error'); }
+}
+async function deleteServer(id) {
+  if (!confirm('حذف سرور؟')) return;
+  try { await api(API + '/servers/' + id, { method: 'DELETE' }); showToast('سرور حذف شد', 'success'); loadServers(); } catch(e) { showToast(e.message, 'error'); }
+}
+
+// ==== SUBSCRIPTIONS ====
+async function loadSubscriptions() {
+  const status = document.getElementById('subStatusFilter').value;
+  try {
+    let url = API + '/subscriptions?limit=50';
+    if (status) url += '&status=' + status;
+    const res = await api(url);
+    const data = res.data || res;
+    if (!Array.isArray(data)) throw new Error('Invalid response');
+    let html = '<table><thead><tr><th>کاربر</th><th>طرح</th><th>وضعیت</th><th>مصرف</th><th>شروع</th><th>پایان</th></tr></thead><tbody>';
+    data.forEach(s => {
+      const owner = s.ownerId || {};
+      const plan = s.planId || {};
+      html += '<tr><td>' + esc(owner.telegramId || '—') + '</td><td>' + esc(plan.title || '—') + '</td>'
+        + '<td><span class="badge ' + s.status + '">' + esc(s.status) + '</span></td>'
+        + '<td>' + (s.usedVolumeBytes ? (s.usedVolumeBytes / 1073741824).toFixed(1) : '0') + '/' + (s.totalVolumeBytes ? (s.totalVolumeBytes / 1073741824).toFixed(1) : '0') + ' GB</td>'
+        + '<td>' + fmt(s.startDate) + '</td><td>' + fmt(s.expireDate) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    if (!data.length) html = '<div class="empty-state">اشتراکی یافت نشد</div>';
+    document.getElementById('subsTableWrap').innerHTML = html;
+  } catch(e) { document.getElementById('subsTableWrap').innerHTML = '<div class="empty-state">خطا: ' + esc(e.message) + '</div>'; }
+}
+
+// ==== RECEIPTS ====
+async function loadReceipts() {
+  const status = document.getElementById('receiptStatusFilter').value;
+  try {
+    let url = API + '/receipts?limit=50';
+    if (status) url += '&status=' + status;
+    const res = await api(url);
+    const data = res.data || res;
+    if (!Array.isArray(data)) throw new Error('Invalid response');
+    let html = '<table><thead><tr><th>کاربر</th><th>مبلغ</th><th>وضعیت</th><th>تاریخ</th><th>عملیات</th></tr></thead><tbody>';
+    data.forEach(r => {
+      const user = r.userId || {};
+      html += '<tr><td>' + esc(user.telegramId || '—') + '</td><td>' + n(r.amount || 0) + '</td>'
+        + '<td><span class="badge ' + r.status + '">' + esc(r.status) + '</span></td>'
+        + '<td>' + fmt(r.createdAt) + '</td>'
+        + '<td class="actions">' + (r.status === 'pending'
+          ? '<button class="btn btn-success btn-sm" onclick="approveReceipt(\'' + r._id + '\')">تایید</button><button class="btn btn-danger btn-sm" onclick="rejectReceipt(\'' + r._id + '\')">رد</button>'
+          : '—') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    if (!data.length) html = '<div class="empty-state">رسیدی یافت نشد</div>';
+    document.getElementById('receiptsTableWrap').innerHTML = html;
+  } catch(e) { document.getElementById('receiptsTableWrap').innerHTML = '<div class="empty-state">خطا: ' + esc(e.message) + '</div>'; }
+}
+async function approveReceipt(id) { if (!confirm('تایید رسید؟')) return; try { await api(API + '/receipts/' + id + '/approve', { method: 'POST' }); showToast('رسید تایید شد','success'); loadReceipts(); } catch(e) { showToast(e.message,'error'); } }
+async function rejectReceipt(id) { if (!confirm('رد رسید؟')) return; try { await api(API + '/receipts/' + id + '/reject', { method: 'POST' }); showToast('رسید رد شد','success'); loadReceipts(); } catch(e) { showToast(e.message,'error'); } }
+
+// ==== TRANSACTIONS ====
+async function loadTransactions() {
+  const type = document.getElementById('txTypeFilter').value;
+  try {
+    let url = API + '/transactions?page=' + state.txPage + '&limit=30';
+    if (type) url += '&type=' + type;
+    const res = await api(url);
+    const d = res.data || res;
+    const txs = d.transactions || d;
+    if (!Array.isArray(txs)) throw new Error('Invalid response');
+    const pages = d.pages || Math.ceil((d.total || 0) / 30);
+    document.getElementById('txPagination').innerHTML = '<button ' + (state.txPage<=1?'disabled':'') + ' onclick="state.txPage=' + (state.txPage-1) + ';loadTransactions()">قبلی</button>'
+      + '<span>صفحه ' + state.txPage + ' از ' + pages + '</span>'
+      + '<button ' + (state.txPage>=pages?'disabled':'') + ' onclick="state.txPage=' + (state.txPage+1) + ';loadTransactions()">بعدی</button>';
+    let html = '<table><thead><tr><th>کاربر</th><th>نوع</th><th>مبلغ</th><th>قبل</th><th>بعد</th><th>توضیحات</th><th>تاریخ</th></tr></thead><tbody>';
+    txs.forEach(t => {
+      const user = t.userId || {};
+      html += '<tr><td>' + esc(user.telegramId || user._id?.slice(-6) || '—') + '</td>'
+        + '<td>' + esc(t.type) + '</td>'
+        + '<td>' + n(t.amount) + '</td>'
+        + '<td>' + n(t.balanceBefore || 0) + '</td>'
+        + '<td>' + n(t.balanceAfter || 0) + '</td>'
+        + '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(t.description || '') + '</td>'
+        + '<td>' + fmt(t.createdAt) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    if (!txs.length) html = '<div class="empty-state">تراکنشی یافت نشد</div>';
+    document.getElementById('transactionsTableWrap').innerHTML = html;
+  } catch(e) { document.getElementById('transactionsTableWrap').innerHTML = '<div class="empty-state">خطا: ' + esc(e.message) + '</div>'; }
+}
+
+// ==== PROMO CODES ====
+async function loadPromoCodes() {
+  try {
+    const res = await api(API + '/promo-codes');
+    const data = res.data || res;
+    if (!Array.isArray(data)) throw new Error('Invalid response');
+    let html = '<table><thead><tr><th>کد</th><th>درصد</th><th>حداکثر تخفیف</th><th>مصرف</th><th>انقضا</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>';
+    data.forEach(p => {
+      const expired = p.expiresAt && new Date(p.expiresAt) < new Date();
+      const exhausted = p.usageLimit && p.usedCount >= p.usageLimit;
+      const active = p.isActive && !expired && !exhausted;
+      html += '<tr><td><strong>' + esc(p.code) + '</strong></td><td>' + n(p.discountPercent) + '%</td>'
+        + '<td>' + (p.maxDiscountAmount ? n(p.maxDiscountAmount) : 'ندارد') + '</td>'
+        + '<td>' + (p.usedCount || 0) + (p.usageLimit ? '/' + p.usageLimit : '') + '</td>'
+        + '<td>' + (p.expiresAt ? fmt(p.expiresAt) : 'ندارد') + '</td>'
+        + '<td><span class="badge ' + (active ? 'active' : 'inactive') + '">' + (active ? 'فعال' : 'غیرفعال') + '</span></td>'
+        + '<td class="actions">'
+        + '<button class="btn btn-outline btn-sm" onclick="openPromoModal(\'' + p._id + '\')">ویرایش</button>'
+        + '<button class="btn btn-danger btn-sm" onclick="deletePromoCode(\'' + p._id + '\')">حذف</button>'
+        + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    if (!data.length) html = '<div class="empty-state">کد تخفیفی ثبت نشده است</div>';
+    document.getElementById('promoTableWrap').innerHTML = html;
+  } catch(e) { document.getElementById('promoTableWrap').innerHTML = '<div class="empty-state">خطا: ' + esc(e.message) + '</div>'; }
+}
+
+function openPromoModal(id) {
+  const isEdit = !!id;
+  document.getElementById('modalContent').innerHTML = `
+    <h3>${isEdit ? 'ویرایش کد تخفیف' : 'کد تخفیف جدید'}</h3>
+    <div class="form-group"><label>کد</label><input type="text" id="promoCode" ${isEdit?'disabled style="opacity:.6"':''}></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>درصد تخفیف</label><input type="number" id="promoDiscount" step="0.1" min="0" max="100"></div>
+      <div class="form-group"><label>حداکثر تخفیف (تومان)</label><input type="number" id="promoMaxDiscount" step="any"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>انقضا</label><input type="date" id="promoExpires"></div>
+      <div class="form-group"><label>محدودیت مصرف</label><input type="number" id="promoUsageLimit" placeholder="خالی = نامحدود"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeModal()">انصراف</button>
+      <button class="btn btn-primary" onclick="savePromoCode('${id||''}')">${isEdit ? 'بروزرسانی' : 'ایجاد'}</button>
+    </div>`;
+  document.getElementById('modalOverlay').classList.add('show');
+  if (isEdit) {
+    fetch(API + '/promo-codes', { headers: { 'Authorization': 'Bearer ' + getAccessToken() } }).then(r => r.json()).then(res => {
+      const promos = res.data || res;
+      const p = (Array.isArray(promos) ? promos : []).find(x => x._id === id);
+      if (p) {
+        document.getElementById('promoCode').value = p.code || '';
+        document.getElementById('promoDiscount').value = p.discountPercent || 0;
+        document.getElementById('promoMaxDiscount').value = p.maxDiscountAmount || '';
+        if (p.expiresAt) document.getElementById('promoExpires').value = new Date(p.expiresAt).toISOString().split('T')[0];
+        document.getElementById('promoUsageLimit').value = p.usageLimit || '';
+      }
+    }).catch(() => {});
+  }
+}
+
+async function savePromoCode(id) {
+  const code = document.getElementById('promoCode').value.trim();
+  const discountPercent = parseFloat(document.getElementById('promoDiscount').value);
+  if (!code || !discountPercent) return showToast('کد و درصد تخفیف الزامی است', 'error');
+  const body = { code, discountPercent, maxDiscountAmount: parseFloat(document.getElementById('promoMaxDiscount').value) || undefined,
+    expiresAt: document.getElementById('promoExpires').value ? new Date(document.getElementById('promoExpires').value).toISOString() : undefined,
+    usageLimit: parseInt(document.getElementById('promoUsageLimit').value) || undefined };
+  try {
+    if (id) { delete body.code; await api(API + '/promo-codes/' + id, { method: 'PUT', body: JSON.stringify(body) }); showToast('کد تخفیف بروزرسانی شد', 'success'); }
+    else { await api(API + '/promo-codes', { method: 'POST', body: JSON.stringify(body) }); showToast('کد تخفیف ایجاد شد', 'success'); }
+    closeModal(); loadPromoCodes();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+async function deletePromoCode(id) { if (!confirm('حذف کد تخفیف؟')) return; try { await api(API + '/promo-codes/' + id, { method: 'DELETE' }); showToast('کد تخفیف حذف شد','success'); loadPromoCodes(); } catch(e) { showToast(e.message,'error'); } }
+
+// ==== TICKETS ====
+async function loadTickets() {
+  try {
+    const res = await api(API + '/tickets');
+    const data = res.data || res;
+    if (!Array.isArray(data)) throw new Error('Invalid response');
+    let html = '<table><thead><tr><th>کاربر</th><th>موضوع</th><th>وضعیت</th><th>پیام‌ها</th><th>تاریخ</th><th>عملیات</th></tr></thead><tbody>';
+    data.forEach(t => {
+      const user = t.userId || {};
+      html += '<tr><td>' + esc(user.telegramId || '—') + '</td><td>' + esc(t.subject || '—') + '</td>'
+        + '<td><span class="badge ' + t.status + '">' + esc(t.status) + '</span></td>'
+        + '<td>' + (t.messages?.length || 0) + '</td>'
+        + '<td>' + fmt(t.createdAt) + '</td>'
+        + '<td class="actions">'
+        + '<button class="btn btn-outline btn-sm" onclick="openTicketModal(\'' + t._id + '\')">مشاهده</button>'
+        + (t.status !== 'closed' ? '<button class="btn btn-danger btn-sm" onclick="closeTicket(\'' + t._id + '\')">بستن</button>'
+          : '<button class="btn btn-outline btn-sm" onclick="reopenTicket(\'' + t._id + '\')">بازگشایی</button>')
+        + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    if (!data.length) html = '<div class="empty-state">تیکتی یافت نشد</div>';
+    document.getElementById('ticketsTableWrap').innerHTML = html;
+  } catch(e) { document.getElementById('ticketsTableWrap').innerHTML = '<div class="empty-state">خطا: ' + esc(e.message) + '</div>'; }
+}
+
+function openTicketModal(id) {
+  fetch(API + '/tickets/' + id, { headers: { 'Authorization': 'Bearer ' + getAccessToken() } }).then(r => r.json()).then(res => {
+    const t = res.data || res;
+    let msgs = '';
+    (t.messages || []).forEach(m => {
+      msgs += '<div style="background:var(--bg3);padding:10px;border-radius:6px;margin-bottom:8px;font-size:13px">'
+        + '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><strong>' + esc(m.senderRole || 'user') + '</strong><small style="color:var(--text2)">' + fmt(m.createdAt) + '</small></div>'
+        + '<div>' + esc(m.text) + '</div></div>';
+    });
+    document.getElementById('modalContent').innerHTML = `
+      <h3>${esc(t.subject)}</h3>
+      ${msgs || '<div class="empty-state">پیامی وجود ندارد</div>'}
+      ${t.status !== 'closed' ? `
+        <div class="form-group" style="margin-top:12px"><label>پاسخ</label><textarea id="ticketReply" rows="3"></textarea></div>
+        <div class="form-actions">
+          <button class="btn btn-outline" onclick="closeModal()">انصراف</button>
+          <button class="btn btn-primary" onclick="replyTicket('${id}')">ارسال پاسخ</button>
+        </div>` : '<div class="form-actions"><button class="btn btn-outline" onclick="closeModal()">بستن</button></div>'}`;
+    document.getElementById('modalOverlay').classList.add('show');
+  }).catch(e => showToast(e.message, 'error'));
+}
+
+async function replyTicket(id) {
+  const text = document.getElementById('ticketReply')?.value.trim();
+  if (!text) return showToast('متن پاسخ را وارد کنید', 'error');
+  try { await api(API + '/tickets/' + id + '/reply', { method: 'POST', body: JSON.stringify({ text }) }); showToast('پاسخ ارسال شد', 'success'); closeModal(); loadTickets(); } catch(e) { showToast(e.message, 'error'); }
+}
+async function closeTicket(id) { if (!confirm('بستن تیکت؟')) return; try { await api(API + '/tickets/' + id + '/close', { method: 'POST' }); showToast('تیکت بسته شد','success'); loadTickets(); } catch(e) { showToast(e.message,'error'); } }
+async function reopenTicket(id) { try { await api(API + '/tickets/' + id + '/reopen', { method: 'POST' }); showToast('تیکت بازگشایی شد','success'); loadTickets(); } catch(e) { showToast(e.message,'error'); } }
+
+// ==== FRAUD ====
+async function loadFraudLogs() {
+  const severity = document.getElementById('fraudSeverityFilter').value;
+  const resolved = document.getElementById('fraudResolvedFilter').value;
+  try {
+    let url = API + '/fraud-logs';
+    const params = [];
+    if (severity) params.push('severity=' + severity);
+    if (resolved !== '') params.push('resolved=' + resolved);
+    if (params.length) url += '?' + params.join('&');
+    const res = await api(url);
+    const data = res.data || res;
+    if (!Array.isArray(data)) throw new Error('Invalid response');
+    let html = '<table><thead><tr><th>کاربر</th><th>قاعده</th><th>سطح</th><th>امتیاز</th><th>توضیحات</th><th>اقدام</th><th>تاریخ</th><th>عملیات</th></tr></thead><tbody>';
+    data.forEach(f => {
+      const user = f.userId || {};
+      html += '<tr><td>' + esc(user.telegramId || '—') + '</td><td>' + esc(f.ruleName) + '</td>'
+        + '<td><span class="badge ' + (f.severity === 'critical' || f.severity === 'high' ? 'inactive' : 'pending') + '">' + esc(f.severity) + '</span></td>'
+        + '<td>' + f.score + '</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(f.description) + '</td>'
+        + '<td>' + esc(f.actionTaken || '—') + '</td><td>' + fmt(f.createdAt) + '</td>'
+        + '<td class="actions">' + (!f.resolved ? '<button class="btn btn-success btn-sm" onclick="resolveFraud(\'' + f._id + '\')">حل شد</button>' : '<span style="color:var(--success)">حل شده</span>') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    if (!data.length) html = '<div class="empty-state">لاگی یافت نشد</div>';
+    document.getElementById('fraudTableWrap').innerHTML = html;
+  } catch(e) { document.getElementById('fraudTableWrap').innerHTML = '<div class="empty-state">خطا: ' + esc(e.message) + '</div>'; }
+}
+async function resolveFraud(id) {
+  try { await api(API + '/fraud-logs/' + id + '/resolve', { method: 'POST', body: JSON.stringify({ notes: 'Resolved by admin' }) }); showToast('لاگ تقلب حل شد','success'); loadFraudLogs(); } catch(e) { showToast(e.message,'error'); }
+}
+
+// ==== SETTINGS ====
+async function loadSettings() {
+  try {
+    const res = await api(API + '/settings');
+    const data = res.data || res;
+    if (!Array.isArray(data)) throw new Error('Invalid response');
+    state.settings = data;
+    let html = '<table><thead><tr><th>گروه</th><th>عنوان</th><th>کلید</th><th>نوع</th><th>مقدار</th><th>عملیات</th></tr></thead><tbody>';
+    data.forEach(s => {
+      const val = typeof s.value === 'object' ? JSON.stringify(s.value) : String(s.value || '');
+      html += '<tr><td>' + esc(s.group || 'general') + '</td><td><strong>' + esc(s.label || s.key) + '</strong><br><small>' + esc(s.description || '') + '</small></td><td><code>' + esc(s.key) + '</code></td><td>' + esc(s.type || 'string') + '</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(s.isSecret ? '********' : val) + '</td>'
+        + '<td><button class="btn btn-outline btn-sm" onclick="editSetting(\'' + esc(s.key) + '\')">ویرایش</button></td></tr>';
+    });
+    html += '</tbody></table>';
+    if (!data.length) html = '<div class="empty-state">تنظیماتی ثبت نشده است</div>';
+    document.getElementById('settingsTableWrap').innerHTML = html;
+  } catch(e) { document.getElementById('settingsTableWrap').innerHTML = '<div class="empty-state">خطا: ' + esc(e.message) + '</div>'; }
+}
+function editSetting(key) {
+  const setting = state.settings.find(s => s.key === key) || { key, value: '', type: 'string' };
+  const type = setting.type || 'string';
+  const val = typeof setting.value === 'object' ? JSON.stringify(setting.value, null, 2) : String(setting.value ?? '');
+  const input = type === 'text' || type === 'json'
+    ? `<textarea id="settingValue" rows="5">${esc(val)}</textarea>`
+    : type === 'boolean'
+      ? `<select id="settingValue"><option value="true">true</option><option value="false">false</option></select>`
+      : `<input type="${type === 'number' ? 'number' : 'text'}" id="settingValue" value="${esc(val)}">`;
+  document.getElementById('modalContent').innerHTML = `
+    <h3>ویرایش تنظیمات</h3>
+    <div class="form-group"><label>کلید</label><input type="text" value="${esc(key)}" disabled style="opacity:.6"></div>
+    <div class="form-group"><label>مقدار</label>${input}</div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeModal()">انصراف</button><button class="btn btn-primary" onclick="saveSetting('${esc(key)}')">ذخیره</button>
+    </div>`;
+  document.getElementById('modalOverlay').classList.add('show');
+  if (type === 'boolean') document.getElementById('settingValue').value = String(val === 'true');
+}
+async function saveSetting(key) {
+  try {
+    await api(API + '/settings/' + encodeURIComponent(key), { method: 'PUT', body: JSON.stringify({ value: document.getElementById('settingValue').value }) });
+    showToast('تنظیمات ذخیره شد', 'success'); closeModal(); loadSettings();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+// ==== ANALYTICS ====
+async function loadAnalytics() {
+  try {
+    const [ret, churn, pop] = await Promise.all([
+      api(API + '/analytics/retention').catch(() => ({ data: {} })),
+      api(API + '/analytics/churn').catch(() => ({ data: {} })),
+      api(API + '/analytics/server-popularity').catch(() => ({ data: [] })),
+    ]);
+    const rd = ret.data || ret;
+    const cd = churn.data || churn;
+    const pd = pop.data || pop;
+    document.getElementById('analyticsCards').innerHTML = `
+      <div class="card"><div class="label">نرخ نگهداشت</div><div class="value ${(rd.retentionRate || 0) > 50 ? 'green' : 'orange'}">${rd.retentionRate || 0}%</div><div style="font-size:12px;color:var(--text2);margin-top:4px">کاربران فعال: ${n(rd.activeUsers || 0)} از ${n(rd.totalUsers || 0)}</div></div>
+      <div class="card"><div class="label">نرخ ریزش</div><div class="value ${(cd.churnRate || 0) > 20 ? 'red' : 'green'}">${cd.churnRate || 0}%</div><div style="font-size:12px;color:var(--text2);margin-top:4px">ریزش ۳۰ روز: ${n(cd.churnedLast30 || 0)}</div></div>
+      <div class="card"><div class="label">شاخص</div><div class="value blue">${n(rd.activeUsers || 0)}/${n(rd.totalUsers || 1)}</div><div style="font-size:12px;color:var(--text2);margin-top:4px">نسبت فعال به کل</div></div>`;
+    let popHtml = '<table><thead><tr><th>سرور</th><th>IP</th><th>تعداد مشترک</th></tr></thead><tbody>';
+    (Array.isArray(pd) ? pd : []).forEach(p => {
+      popHtml += '<tr><td>' + esc(p.serverName || p.server?.name || '—') + '</td><td>' + esc(p.ipAddress || p.server?.ipAddress || '—') + '</td><td>' + n(p.subscriberCount) + '</td></tr>';
+    });
+    popHtml += '</tbody></table>';
+    if (!Array.isArray(pd) || pd.length === 0) popHtml = '<div class="empty-state">داده‌ای موجود نیست</div>';
+    document.getElementById('analyticsServerPop').innerHTML = popHtml;
+  } catch(e) { document.getElementById('analyticsCards').innerHTML = '<div class="empty-state">خطا: ' + esc(e.message) + '</div>'; }
+}
+
+// ==== ADMINS ====
+async function loadAdmins() {
+  try {
+    const res = await api(AUTH + '/admins');
+    const data = res.data || res;
+    if (!Array.isArray(data)) throw new Error('Invalid response');
+    let html = '<table><thead><tr><th>ایمیل</th><th>نام</th><th>نقش</th><th>وضعیت</th><th>آخرین ورود</th><th>عملیات</th></tr></thead><tbody>';
+    data.forEach(a => {
+      html += '<tr><td>' + esc(a.email) + '</td><td>' + esc(a.displayName) + '</td>'
+        + '<td><span class="badge ' + a.role + '">' + esc(a.role) + '</span></td>'
+        + '<td><span class="badge ' + (a.isActive ? 'active' : 'inactive') + '">' + (a.isActive ? 'فعال' : 'غیرفعال') + '</span></td>'
+        + '<td>' + (a.lastLoginAt ? fmt(a.lastLoginAt) : '—') + '</td>'
+        + '<td class="actions">'
+        + '<button class="btn btn-outline btn-sm" onclick="toggleAdminStatus(\'' + a._id + '\',\'' + a.isActive + '\')">' + (a.isActive ? 'غیرفعال' : 'فعال') + '</button>'
+        + (a.role !== 'superadmin' ? '<button class="btn btn-danger btn-sm" onclick="deleteAdmin(\'' + a._id + '\')">حذف</button>' : '')
+        + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    if (!data.length) html = '<div class="empty-state">مدیری یافت نشد</div>';
+    document.getElementById('adminsTableWrap').innerHTML = html;
+  } catch(e) { document.getElementById('adminsTableWrap').innerHTML = '<div class="empty-state">خطا: ' + esc(e.message) + '</div>'; }
+}
+
+function openAdminModal() {
+  document.getElementById('modalContent').innerHTML = `
+    <h3>مدیر جدید</h3>
+    <div class="form-group"><label>ایمیل</label><input type="email" id="adminEmail" dir="ltr"></div>
+    <div class="form-group"><label>نام</label><input type="text" id="adminName"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>رمز عبور</label><input type="password" id="adminPassword" dir="ltr"></div>
+      <div class="form-group"><label>نقش</label><select id="adminRole"><option value="admin">مدیر</option><option value="support">پشتیبان</option><option value="finance">مالی</option><option value="analyst">تحلیلگر</option><option value="moderator">ناظر</option></select></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeModal()">انصراف</button>
+      <button class="btn btn-primary" onclick="saveAdmin()">ایجاد</button>
+    </div>`;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+async function saveAdmin() {
+  const body = {
+    email: document.getElementById('adminEmail').value.trim(),
+    displayName: document.getElementById('adminName').value.trim(),
+    password: document.getElementById('adminPassword').value,
+    role: document.getElementById('adminRole').value,
+  };
+  if (!body.email || !body.password || !body.displayName) return showToast('ایمیل، رمز و نام الزامی است', 'error');
+  try { await api(AUTH + '/admins', { method: 'POST', body: JSON.stringify(body) }); showToast('مدیر ایجاد شد', 'success'); closeModal(); loadAdmins(); } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function toggleAdminStatus(id, current) {
+  try { await api(AUTH + '/admins/' + id, { method: 'PATCH', body: JSON.stringify({ isActive: current === 'true' ? false : true }) }); showToast('وضعیت مدیر تغییر کرد', 'success'); loadAdmins(); } catch(e) { showToast(e.message, 'error'); }
+}
+async function deleteAdmin(id) {
+  if (!confirm('حذف مدیر؟')) return; try { await api(AUTH + '/admins/' + id, { method: 'DELETE' }); showToast('مدیر حذف شد', 'success'); loadAdmins(); } catch(e) { showToast(e.message, 'error'); }
+}
+
+// ==== PROFILE ====
+function showProfile() {
+  const nav = document.querySelectorAll('.nav-item');
+  nav.forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('section-profile').classList.add('active');
+  loadProfile();
+}
+
+async function loadProfile() {
+  try {
+    const res = await api(AUTH + '/me');
+    const p = res.data || res;
+    document.getElementById('profile2faStatus').textContent = 'وضعیت: ' + (p.totopEnabled ? 'فعال' : 'غیرفعال');
+    document.getElementById('adminName').textContent = p.displayName || p.email || '';
+
+    const sessRes = await api(AUTH + '/sessions');
+    const sessions = sessRes.data || sessRes;
+    let html = '';
+    (Array.isArray(sessions) ? sessions : []).forEach(s => {
+      html += '<div style="background:var(--bg3);padding:10px;border-radius:6px;margin-bottom:8px;font-size:12px">'
+        + '<div style="display:flex;justify-content:space-between"><span>IP: ' + esc(s.deviceInfo?.ip || '—') + '</span>'
+        + '<button class="btn btn-danger btn-sm" onclick="revokeSession(\'' + s.tokenId + '\')">قطع</button></div>'
+        + '<div style="color:var(--text2);margin-top:4px">ایجاد: ' + fmt(s.createdAt) + ' | انقضا: ' + fmt(s.expiresAt) + '</div></div>';
+    });
+    document.getElementById('profileSessions').innerHTML = html || '<div class="empty-state">نشستی یافت نشد</div>';
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function revokeSession(tokenId) {
+  try { await api(AUTH + '/sessions/' + tokenId, { method: 'DELETE' }); showToast('نشست قطع شد', 'success'); loadProfile(); } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function changePassword() {
+  const current = document.getElementById('profileCurrentPw').value;
+  const newPw = document.getElementById('profileNewPw').value;
+  if (!current || !newPw) return showToast('هر دو فیلد را پر کنید', 'error');
+  if (newPw.length < 8) return showToast('رمز جدید حداقل ۸ کاراکتر', 'error');
+  try { await api(AUTH + '/change-password', { method: 'POST', body: JSON.stringify({ currentPassword: current, newPassword: newPw }) }); showToast('رمز عبور تغییر کرد. لطفاً مجدداً وارد شوید.', 'success'); handleLogout(); } catch(e) { showToast(e.message, 'error'); }
+}
+
+let _2faSecret = '';
+async function setup2fa() {
+  try {
+    const res = await api(AUTH + '/2fa/setup', { method: 'POST' });
+    _2faSecret = res.data.secret || '';
+    document.getElementById('profile2faSection').style.display = 'block';
+    document.getElementById('profile2faSecret').textContent = _2faSecret;
+    document.getElementById('profile2faSetupBtn').style.display = 'none';
+  } catch(e) { showToast(e.message, 'error'); }
+}
+async function enable2fa() {
+  const code = document.getElementById('profile2faCode').value.trim();
+  if (!code) return showToast('کد تأیید را وارد کنید', 'error');
+  try { await api(AUTH + '/2fa/enable', { method: 'POST', body: JSON.stringify({ code }) }); showToast('2FA فعال شد', 'success'); document.getElementById('profile2faSection').style.display = 'none'; document.getElementById('profile2faSetupBtn').style.display = 'inline-flex'; loadProfile(); } catch(e) { showToast(e.message, 'error'); }
+}
+
+// ==== INIT ====
+function initApp() {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelector('.nav-item').classList.add('active');
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('section-dashboard').classList.add('active');
+  loadDashboard();
+  loadProfile();
+}
+
+async function init() {
+  const token = getAccessToken();
+  if (!token) { document.getElementById('loginScreen').style.display = 'flex'; return; }
+  try {
+    const refreshed = await tryRefresh();
+    if (!refreshed) { document.getElementById('loginScreen').style.display = 'flex'; return; }
+    document.getElementById('loginScreen').style.display = 'none';
+    initApp();
+  } catch { document.getElementById('loginScreen').style.display = 'flex'; }
+}
+
+document.addEventListener('DOMContentLoaded', init);
+document.getElementById('modalOverlay').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "backendUrl": "http://localhost:3000",
+  "nodeToken": "CHANGE_ME_IN_PRODUCTION_GENERATE_A_RANDOM_64_CHAR_HEX_STRING",
+  "region": "us-east",
+  "interface": "eth0",
+  "heartbeatInterval": 30,
+  "metricsInterval": 60,
+  "logLevel": "info"
+}

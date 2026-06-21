@@ -1,0 +1,202 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "HORNET VPN API",
+    "description": "Enterprise-grade distributed VPN management platform",
+    "version": "2.0.0",
+    "contact": {
+      "name": "HORNET Team",
+      "url": "https://hornet.com"
+    }
+  },
+  "servers": [
+    { "url": "http://localhost:3000", "description": "Development" },
+    { "url": "https://api.hornet.com", "description": "Production" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "apiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key"
+      },
+      "nodeTokenAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-node-token"
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "responses": {
+          "200": { "description": "Service is healthy" }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": ["Monitoring"],
+        "summary": "Prometheus metrics",
+        "responses": {
+          "200": { "description": "Metrics in Prometheus format" }
+        }
+      }
+    },
+    "/api/admin/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Admin login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "minLength": 8 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login successful" },
+          "401": { "description": "Invalid credentials" }
+        }
+      }
+    },
+    "/api/admin/auth/me": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Get current admin profile",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Admin profile" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/admin/servers": {
+      "get": {
+        "tags": ["Servers"],
+        "summary": "List all servers",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Server list" }
+        }
+      },
+      "post": {
+        "tags": ["Servers"],
+        "summary": "Create a new server",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "ipAddress", "port", "xrayApiPort", "maxCapacity", "region"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "ipAddress": { "type": "string" },
+                  "region": { "type": "string", "enum": ["us-east", "de-fra", "sg-sin", "ir-thr"] },
+                  "port": { "type": "integer", "default": 443 },
+                  "maxCapacity": { "type": "integer", "default": 100 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Server created" }
+        }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "List users",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } }
+        ],
+        "responses": {
+          "200": { "description": "Paginated user list" }
+        }
+      }
+    },
+    "/api/admin/finance/transactions": {
+      "get": {
+        "tags": ["Finance"],
+        "summary": "List transactions",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Transaction list" }
+        }
+      }
+    },
+    "/api/nodes/register": {
+      "post": {
+        "tags": ["Nodes"],
+        "summary": "Register a VPS node",
+        "security": [{ "nodeTokenAuth": [] }],
+        "responses": {
+          "201": { "description": "Node registered" }
+        }
+      }
+    },
+    "/api/nodes/heartbeat": {
+      "post": {
+        "tags": ["Nodes"],
+        "summary": "Send node heartbeat",
+        "security": [{ "nodeTokenAuth": [] }],
+        "responses": {
+          "200": { "description": "Heartbeat acknowledged" }
+        }
+      }
+    },
+    "/api/admin/fraud/score/{userId}": {
+      "get": {
+        "tags": ["Fraud"],
+        "summary": "Get fraud profile for a user",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Fraud profile" }
+        }
+      }
+    },
+    "/api/admin/queue/stats": {
+      "get": {
+        "tags": ["Queue"],
+        "summary": "Get queue statistics",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Queue metrics" }
+        }
+      }
+    },
+    "/api/admin/regions/health": {
+      "get": {
+        "tags": ["Regions"],
+        "summary": "Get health status of all regions",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Region health status" }
+        }
+      }
+    }
+  }
+}
