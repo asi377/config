@@ -1,6 +1,8 @@
 import config from '../../config/index.js';
 import WalletGateway from './WalletGateway.js';
 import StripeGateway from './StripeGateway.js';
+import SmsC2CGateway from './SmsC2CGateway.js';
+import CryptomusGateway from './CryptomusGateway.js';
 import logger from '../../config/logger.js';
 
 class PaymentGatewayManager {
@@ -24,6 +26,26 @@ class PaymentGatewayManager {
     } else {
       this.defaultGateway = 'wallet';
       logger.info('[billing] Wallet-only mode (Stripe not configured)');
+    }
+
+    // SMS C2C gateway
+    this.register('sms_c2c', new SmsC2CGateway());
+    logger.info('[billing] SMS C2C gateway enabled');
+
+    // Cryptomus gateway
+    if (config.cryptomus?.apiKey && config.cryptomus?.merchantId) {
+      const cryptomus = new CryptomusGateway({
+        apiKey: config.cryptomus.apiKey,
+        merchantId: config.cryptomus.merchantId,
+        webhookSecret: config.cryptomus.webhookSecret,
+        backendUrl: config.backendUrl,
+        frontendUrl: config.corsOrigin,
+      });
+      await cryptomus.initialize();
+      this.register('cryptomus', cryptomus);
+      logger.info('[billing] Cryptomus gateway enabled');
+    } else {
+      logger.info('[billing] Cryptomus gateway disabled (not configured)');
     }
   }
 

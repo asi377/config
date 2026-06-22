@@ -6,10 +6,54 @@ import UserRepository from '../repositories/UserRepository.js';
 import { extractBankMelliAmount } from '../utils/smsParser.js';
 import subscriptionService from './SubscriptionService.js';
 import logger from '../config/logger.js';
+import paymentGateway from '../billing/gateway/index.js';
+import SmsC2CGateway from '../billing/gateway/SmsC2CGateway.js';
+import CryptomusGateway from '../billing/gateway/CryptomusGateway.js';
 
 class PaymentService extends BaseService {
-  submitReceipt = this.wrapMethod(async (userId, planId, amount, photoFileId) => {
-    return ReceiptRepository.create({ userId, planId: planId || null, amount, photoFileId, status: 'pending' });
+  submitReceipt = this.wrapMethod(async (userId, planId, amount, photoFileId, gateway = null) => {
+    const receipt = await ReceiptRepository.create({ userId, planId: planId || null, amount, photoFileId, status: 'pending', gateway });
+
+    if (gateway === 'wallet' || gateway === null) {
+      const walletBalance = await UserRepository.getWalletBalance(userId);
+      if (walletBalance >= amount) {
+        const session = await mongoose.startSession();
+        try {
+          return await session.withTransaction(async () => {
+            const user = await UserRepository.findById(userId, { session });
+            if (!user) throw new NotFoundError('User');
+
+            user.walletBalance -= amount;
+            await user.save({ session });
+
+            receipt.status = 'paid';
+            receipt.paidAt = new Date();
+            receipt.paidBy = userId;
+            await receipt.save({ session });
+
+            logger.info({ userId, receiptId: receipt._id, amount }, '[payment] Wallet payment completed');
+            return receipt;
+          });
+        } finally {
+          await session.endSession();
+        }
+      } else {
+        receipt.status = 'pending_payment';
+        await receipt.save();
+        logger.info({ userId, receiptId: receipt._id, amount }, '[payment] Wallet payment pending - insufficient balance');
+        return receipt;
+      }
+    }
+
+    const paymentResult = await paymentGateway.createPayment(amount, 'irr', { userId, receiptId: receipt._id, planId }, gateway);
+
+    receipt.status = 'pending_payment';
+    receipt.gatewayPaymentId = paymentResult.paymentId || paymentResult.transactionId || paymentResult.orderId;
+    receipt.gateway = paymentResult.gateway;
+    await receipt.save();
+
+    logger.info({ userId, receiptId: receipt._id, gateway, paymentId: receipt.gatewayPaymentId }, '[payment] Payment submitted to gateway');
+    return { receipt, gatewayPayment: paymentResult };
   });
 
   processReceipt = this.wrapMethod(async (receiptId, adminId, action) => {
@@ -57,7 +101,7 @@ class PaymentService extends BaseService {
     return amount;
   });
 
-  processSmsWebhook = this.wrapMethod(async (smsText, botInstance) => {
+  processSmsWebhook = this.wrapMethod(async (smsText, _botInstance) => {
     const amount = extractBankMelliAmount(smsText);
     if (!amount) {
       logger.warn({ smsPreview: smsText.slice(0, 100) }, '[sms-webhook] could not extract amount');
@@ -80,8 +124,8 @@ class PaymentService extends BaseService {
 
       // Notify admins about the match
       const adminUser = await UserRepository.findOne({ role: 'superadmin' }, { sort: { createdAt: 1 } });
-      if (adminUser?.telegramId && botInstance) {
-        await botInstance.telegram.sendMessage(
+      if (adminUser?.telegramId && _botInstance) {
+        await _botInstance.telegram.sendMessage(
           adminUser.telegramId,
           [
             '📩 *تطابق پیامک - نیاز به تأیید*',
@@ -102,6 +146,113 @@ class PaymentService extends BaseService {
   _formatRials(amount) {
     return `${amount.toLocaleString()} ریال`;
   }
+
+  // === SMS C2C Gateway methods ===
+
+  processSmsC2CWebhook = this.wrapMethod(async (_smsText, _botInstance) => {
+    const smsC2CGateway = new SmsC2CGateway();
+    try {
+      const result = await smsC2CGateway.handleWebhook({ text: _smsText }, {});
+      return result;
+    } catch (err) {
+      logger.error({ err, smsPreview: _smsText?.slice(0, 100) }, '[sms-c2c-webhook] processing error');
+      throw err;
+    }
+  });
+
+  createSmsC2CPayment = this.wrapMethod(async (userId, amount) => {
+    const smsC2CGateway = new SmsC2CGateway();
+    const metadata = { userId };
+    const result = await smsC2CGateway.createPayment(amount, 'irr', metadata);
+
+    logger.info({ userId, amount, uniqueAmount: result.uniqueAmount }, '[payment] SMS C2C payment created');
+    return {
+      gateway: 'sms_c2c',
+      paymentId: result.transactionId,
+      uniqueAmount: result.uniqueAmount,
+      status: 'pending_sms_verification',
+      amount,
+      currency: 'IRR',
+    };
+  });
+
+  // === Cryptomus Gateway methods ===
+
+  processCryptomusWebhook = this.wrapMethod(async (payload, headers) => {
+    const cryptomusGateway = new CryptomusGateway();
+    try {
+      const result = await cryptomusGateway.handleWebhook(payload, headers);
+      return result;
+    } catch (err) {
+      logger.error({ err }, '[cryptomus-webhook] processing error');
+      throw err;
+    }
+  });
+
+  createCryptomusPayment = this.wrapMethod(async (userId, amount) => {
+    const cryptomusGateway = new CryptomusGateway();
+    const metadata = { userId };
+    const result = await cryptomusGateway.createPayment(amount, 'usd', metadata);
+
+    logger.info({ userId, amount, paymentId: result.paymentId }, '[payment] Cryptomus payment created');
+    return {
+      gateway: 'cryptomus',
+      paymentId: result.paymentId,
+      orderId: result.orderId,
+      status: result.status,
+      amount,
+      currency: 'USD',
+      paymentUrl: result.paymentUrl,
+      transactionId: result.transactionId,
+    };
+  });
+
+  // === Unified payment methods ===
+
+  submitPayment = this.wrapMethod(async (userId, planId, amount, gateway = null, metadata = {}) => {
+    const receipt = await ReceiptRepository.create({ userId, planId, amount, metadata });
+
+    if (gateway === 'wallet' || gateway === null) {
+      const walletBalance = await UserRepository.getWalletBalance(userId);
+      if (walletBalance >= amount) {
+        const session = await mongoose.startSession();
+        try {
+          return await session.withTransaction(async () => {
+            const user = await UserRepository.findById(userId, { session });
+            if (!user) throw new NotFoundError('User');
+
+            user.walletBalance -= amount;
+            await user.save({ session });
+
+            receipt.status = 'paid';
+            receipt.paidAt = new Date();
+            receipt.paidBy = userId;
+            await receipt.save({ session });
+
+            logger.info({ userId, receiptId: receipt._id, amount }, '[payment] Wallet payment completed');
+            return receipt;
+          });
+        } finally {
+          await session.endSession();
+        }
+      } else {
+        receipt.status = 'pending_payment';
+        await receipt.save();
+        logger.info({ userId, receiptId: receipt._id, amount }, '[payment] Wallet payment pending - insufficient balance');
+        return receipt;
+      }
+    }
+
+    const paymentResult = await paymentGateway.createPayment(amount, 'irr', { userId, receiptId: receipt._id, planId, ...metadata }, gateway);
+
+    receipt.status = 'pending_payment';
+    receipt.gatewayPaymentId = paymentResult.paymentId || paymentResult.transactionId || paymentResult.orderId;
+    receipt.gateway = paymentResult.gateway;
+    await receipt.save();
+
+    logger.info({ userId, receiptId: receipt._id, gateway, paymentId: receipt.gatewayPaymentId }, '[payment] Payment submitted to gateway');
+    return { receipt, gatewayPayment: paymentResult };
+  });
 }
 
 export default new PaymentService();
