@@ -124,8 +124,9 @@ describe('SmartSubscriptionService', () => {
       expect(body).toContain('DE-01');
       expect(body).toContain('vless');
       expect(body).toContain('trojan');
-      expect(body).toContain('DE-01-vless');
-      expect(body).toContain('DE-01-trojan');
+      // proxy names include port suffix: DE-01-<port>-<protocol>
+      expect(body).toContain('DE-01-443-vless');
+      expect(body).toContain('DE-01-443-trojan');
     });
   });
 
@@ -148,8 +149,8 @@ describe('SmartSubscriptionService', () => {
       expect(p).toHaveProperty('outbounds');
       expect(p).toHaveProperty('route');
       const tags = p.outbounds.map(o => o.tag);
-      expect(tags).toContain('DE-01-vless');
-      expect(tags).toContain('DE-01-trojan');
+      expect(tags).toContain('DE-01-443-vless');
+      expect(tags).toContain('DE-01-443-trojan');
     });
   });
 

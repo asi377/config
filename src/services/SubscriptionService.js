@@ -19,18 +19,22 @@ const GB = 1073741824;
 async function provisionPool(user, plan, session) {
   const server = await ServerRepository.allocateLeastLoaded();
   const now = new Date();
-  const expireDate = new Date(now.getTime() + plan.durationDays * 86400000);
+  // expireDate is a placeholder — the real value is set on first connect
+  // (activation logic in UsageService.trackUsage).
+  // We store plan duration on the document so activation can recalculate it.
+  const placeholderExpireDate = new Date(now.getTime() + plan.durationDays * 86400000);
 
   return SubscriptionRepository.create({
     ownerId: user._id,
     planId: plan._id,
     serverId: server._id,
-    status: 'active',
+    status: 'on_hold',
     totalVolumeBytes: plan.baseVolumeGB * GB,
     rolloverVolumeBytes: 0,
     usedVolumeBytes: 0,
     startDate: now,
-    expireDate,
+    expireDate: placeholderExpireDate,
+    activatedAt: null,
   }, { session });
 }
 

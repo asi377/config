@@ -1,8 +1,10 @@
 import BaseService from '../../shared/BaseService.js';
+import mongoose from 'mongoose';
 import SubscriptionRepository from '../../repositories/SubscriptionRepository.js';
 import UserRepository from '../../repositories/UserRepository.js';
 import TunnelConfigRepository from '../../repositories/TunnelConfigRepository.js';
 import ServerRepository from '../../repositories/ServerRepository.js';
+import PlanRepository from '../../repositories/PlanRepository.js';
 import EventBus from '../../events/EventBus.js';
 import logger from '../../config/logger.js';
 
@@ -11,16 +13,29 @@ class UsageService extends BaseService {
    * Record consumed bytes for a subscription, applying the server's
    * traffic coefficient before persisting.
    *
+   * If the subscription is `on_hold` and the reported bytes are > 0,
+   * the "First Connect" activation flow fires inside a MongoDB transaction:
+   *   - status → 'active'
+   *   - activatedAt → now
+   *   - startDate → now
+   *   - expireDate → now + plan.durationDays  (clock starts from first byte)
+   *
    * @param {string} subscriptionId
    * @param {number} bytesUsed  - Raw bytes reported by the node agent.
    * @param {string|null} serverId - The server that reported the traffic.
-   *   When provided, the server's `coefficient` field is fetched and the
-   *   reported bytes are multiplied by it before deduction.
-   *   e.g. coefficient 1.5 → 100 MB reported = 150 MB charged.
-   *
    * @returns {{ action: string, usagePercent: number, chargedBytes: number }}
    */
   async trackUsage(subscriptionId, bytesUsed, serverId = null) {
+    // ── First-Connect activation check ────────────────────────────────────
+    // Load subscription (no session yet — just a quick status peek).
+    const subCheck = await SubscriptionRepository.findById(subscriptionId);
+    if (!subCheck) return { action: 'skipped' };
+
+    if (subCheck.status === 'on_hold' && bytesUsed > 0) {
+      await this._activateOnFirstConnect(subscriptionId);
+    }
+
+    // ── Re-load after potential activation, then proceed with normal tracking
     const sub = await SubscriptionRepository.findById(subscriptionId);
     if (!sub || sub.status !== 'active') return { action: 'skipped' };
 
@@ -99,6 +114,65 @@ class UsageService extends BaseService {
       }
     }
     return results;
+  }
+
+  /**
+   * "First Connect" activation — called when a subscription in `on_hold`
+   * status receives its first non-zero traffic report.
+   *
+   * Wrapped in a MongoDB transaction with an atomic findOneAndUpdate to
+   * prevent race conditions: if two heartbeats arrive simultaneously, only
+   * one will win the `status: 'on_hold'` filter and perform the activation.
+   *
+   * @param {string} subscriptionId
+   */
+  async _activateOnFirstConnect(subscriptionId) {
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        // Atomic check-and-update: only proceeds if status is still 'on_hold'
+        const sub = await SubscriptionRepository.model.findOneAndUpdate(
+          { _id: subscriptionId, status: 'on_hold' },
+          { $set: { status: 'on_hold' } }, // no-op write — just locks the doc
+          { new: true, session },
+        );
+
+        if (!sub) {
+          // Another process already activated, or it was never on_hold — skip
+          return;
+        }
+
+        // Load the plan to calculate the real expiry
+        const plan = await PlanRepository.findById(sub.planId.toString(), { session });
+        if (!plan) {
+          logger.warn({ subscriptionId }, '[usage] Cannot activate: plan not found');
+          return;
+        }
+
+        const now = new Date();
+        const expireDate = new Date(now.getTime() + plan.durationDays * 86400000);
+
+        sub.status = 'active';
+        sub.activatedAt = now;
+        sub.startDate = now;
+        sub.expireDate = expireDate;
+        await sub.save({ session });
+
+        logger.info(
+          { subscriptionId, activatedAt: now, expireDate, planDays: plan.durationDays },
+          '[usage] Subscription activated on first connect',
+        );
+
+        EventBus.emit('subscription:activated', {
+          subscriptionId: sub._id,
+          userId: sub.ownerId,
+          activatedAt: now,
+          expireDate,
+        });
+      });
+    } finally {
+      await session.endSession();
+    }
   }
 
   async getUsageReport(userId) {

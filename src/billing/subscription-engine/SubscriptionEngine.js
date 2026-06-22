@@ -49,13 +49,14 @@ class SubscriptionEngine {
           const sub = await SubscriptionRepository.create({
             ownerId: userId,
             planId: plan._id,
-            status: payment.status === 'completed' ? 'active' : 'pending_payment',
+            status: payment.status === 'completed' ? 'on_hold' : 'pending_payment',
             totalVolumeBytes: plan.baseVolumeGB * 1073741824,
             usedVolumeBytes: 0,
             startDate: now,
             expireDate,
             gatewayPaymentId: payment.paymentId,
             gatewayName: payment.gateway,
+            activatedAt: null,
           }, { session });
 
           await TransactionRepository.create({
@@ -80,11 +81,12 @@ class SubscriptionEngine {
         const sub = await SubscriptionRepository.create({
           ownerId: userId,
           planId: plan._id,
-          status: 'active',
+          status: 'on_hold',
           totalVolumeBytes: plan.baseVolumeGB * 1073741824,
           usedVolumeBytes: 0,
           startDate: now,
           expireDate,
+          activatedAt: null,
         }, { session });
 
         EventBus.emit('subscription:created', { userId, subscriptionId: sub._id, planName: plan.name });

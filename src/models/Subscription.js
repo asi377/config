@@ -37,10 +37,10 @@ const subscriptionSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: {
-        values: ['pending_shared_payment', 'active', 'expired', 'suspended', 'trial', 'cancelled', 'pending_payment'],
+        values: ['on_hold', 'pending_shared_payment', 'active', 'expired', 'suspended', 'trial', 'cancelled', 'pending_payment'],
         message: '{VALUE} is not a valid subscription status',
       },
-      default: 'pending_shared_payment',
+      default: 'on_hold',
       index: true,
     },
     totalVolumeBytes: {
@@ -94,6 +94,10 @@ const subscriptionSchema = new mongoose.Schema(
     },
     suspendReason: {
       type: String,
+      default: null,
+    },
+    activatedAt: {
+      type: Date,
       default: null,
     },
   },

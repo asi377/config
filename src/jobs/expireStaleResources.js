@@ -7,6 +7,9 @@ export async function expireStaleResources() {
   const now = new Date();
 
   try {
+    // Only expire subscriptions that have actually been activated.
+    // on_hold subscriptions have no running clock — their expireDate is a
+    // placeholder and must not trigger expiry here.
     const expiredSubs = await Subscription.find({
       status: 'active',
       expireDate: { $lte: now },
@@ -34,6 +37,7 @@ export async function expireStaleResources() {
       { $set: { isActive: false } },
     );
 
+    // Suspend quota-exhausted active subscriptions (on_hold excluded — not yet running)
     await Subscription.updateMany(
       {
         status: 'active',
