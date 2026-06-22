@@ -12,39 +12,40 @@ export default class CryptomusGateway extends BaseGateway {
     this.apiKey = config.apiKey;
     this.merchantId = config.merchantId;
     this.baseUrl = 'https://api.cryptomus.com/v1';
-    this.supportedCoins = ['usdt', 'trx']; // Tether (TRC20) and TRON
+    this.supportedCoins = ['usdt', 'trx'];
     this.webhookSecret = config.webhookSecret;
+    this.backendUrl = config.backendUrl;
+    this.frontendUrl = config.frontendUrl;
   }
 
   async initialize() {
-    if (!this.apiKey) {
-      throw new PaymentGatewayError('Cryptomus API key is required');
-    }
-    logger.info('[cryptomus] Gateway initialized');
+    if (!this.apiKey) throw new PaymentGatewayError('Cryptomus API key is required');
+    if (!this.merchantId) throw new PaymentGatewayError('Cryptomus merchant ID is required');
+    logger.info({ merchantId: this.merchantId }, '[cryptomus] Gateway initialized');
   }
 
   async createPayment(amount, currency = 'usd', metadata = {}) {
     if (!this.initialized) await this.initialize();
     const { userId } = metadata;
-
     if (!userId) throw new PaymentGatewayError('User ID is required');
 
-    // Create a payment on Cryptomus
-    const paymentData = {
+    const orderId = crypto.randomBytes(16).toString('hex');
+    const network = this.getNetworkForCoin('usdt');
+
+    const paymentPayload = {
       amount: amount.toString(),
       currency: currency.toLowerCase(),
-      network: this.getNetworkForCoin(this.supportedCoins[0]),
-      paycurrency: 'usd',
-      order_id: crypto.randomBytes(16).toString('hex'),
-      callback_url: `${this.config.backendUrl}/api/webhooks/cryptomus`,
-      url_return: `${this.config.frontendUrl}/payment/success`,
-      sign: this.generatePaymentSign(amount.toString(), this.supportedCoins[0], this.supportedCoins[0], 'usd'),
+      network,
+      paycurrency: 'usdt',
+      order_id: orderId,
+      callback_url: `${this.backendUrl}/api/webhooks/cryptomus`,
+      url_return: `${this.frontendUrl}/payment/success`,
+      is_payment_multiple: false,
     };
 
     try {
-      const response = await this.makeRequest('/merchant/v2/create', 'POST', paymentData);
+      const response = await this.makeRequest('/payment', 'POST', paymentPayload);
 
-      // Save pending transaction
       const session = await mongoose.startSession();
       try {
         const result = await session.withTransaction(async () => {
@@ -54,26 +55,33 @@ export default class CryptomusGateway extends BaseGateway {
           const transaction = await TransactionRepository.create({
             userId,
             type: 'payment',
-            category: 'cryptomus_payment',
             amount,
             currency,
-            description: `Cryptomus ${this.supportedCoins[0].toUpperCase()} payment via ${this.supportedCoins[0]}`,
+            description: `Cryptomus USDT payment via TRC20 (order ${orderId})`,
             balanceBefore: user.walletBalance,
             balanceAfter: user.walletBalance,
-            metadata: { cryptomusPaymentId: response.data.payment_id, orderId: paymentData.order_id, ...metadata },
-            status: 'pending_cryptomus_payment',
+            metadata: {
+              cryptomusStatus: 'pending_cryptomus_payment',
+              cryptomusPaymentId: response.result.uuid,
+              orderId,
+              cryptomusOrderId: response.result.order_id,
+              ...metadata,
+            },
           }, { session });
 
-          logger.info({ paymentId: response.data.payment_id, userId, amount }, '[cryptomus] Payment created on Cryptomus');
+          logger.info(
+            { paymentId: response.result.uuid, userId, amount, orderId },
+            '[cryptomus] Payment created on Cryptomus'
+          );
 
           return {
             gateway: 'cryptomus',
-            paymentId: response.data.payment_id,
-            orderId: paymentData.order_id,
-            status: response.data.status,
+            paymentId: response.result.uuid,
+            orderId,
+            status: response.result.status,
             amount,
             currency,
-            paymentUrl: response.data.url,
+            paymentUrl: response.result.url,
             transactionId: transaction._id,
           };
         });
@@ -91,24 +99,22 @@ export default class CryptomusGateway extends BaseGateway {
   async verifyPayment(paymentId) {
     if (!this.initialized) await this.initialize();
 
-    try {
-      const paymentData = {
-        type: 'merchant',
-        merchant_id: this.merchantId,
-        payment_id: paymentId,
-          sign: this.generateStatusSign(paymentId, this.merchantId),
-      };
+    const statusPayload = {
+      merchant_id: this.merchantId,
+      payment_id: paymentId,
+    };
 
-      const response = await this.makeRequest('/merchant/v2/payment/status', 'POST', paymentData);
+    try {
+      const response = await this.makeRequest('/payment/status', 'POST', statusPayload);
 
       return {
         gateway: 'cryptomus',
         paymentId,
-        status: response.data.status,
-        amount: parseFloat(response.data.amount),
-        currency: response.data.currency,
-        verified: response.data.status === 'paid',
-        metadata: response.data,
+        status: response.result.status,
+        amount: parseFloat(response.result.amount),
+        currency: response.result.currency,
+        verified: response.result.status === 'paid' || response.result.status === 'paid_over',
+        metadata: response.result,
       };
     } catch (error) {
       logger.error({ paymentId, error }, '[cryptomus] Failed to verify payment');
@@ -119,15 +125,14 @@ export default class CryptomusGateway extends BaseGateway {
   async handleWebhook(payload, headers) {
     if (!this.initialized) await this.initialize();
 
-    // Verify webhook signature
     const signature = headers['cryptomus-signature'] || headers['x-cryptomus-signature'];
     if (!signature) throw new PaymentGatewayError('Missing cryptomus-signature header');
 
     const payloadString = JSON.stringify(payload);
     const expectedSignature = crypto
-      .createHmac('sha256', this.webhookSecret)
+      .createHmac('sha256', this.webhookSecret || this.apiKey)
       .update(payloadString)
-      .digest('hex');
+      .digest('base64');
 
     if (signature !== expectedSignature) throw new PaymentGatewayError('Invalid webhook signature');
 
@@ -138,56 +143,78 @@ export default class CryptomusGateway extends BaseGateway {
 
         if (type !== 'payment') throw new PaymentGatewayError('Unsupported webhook type');
 
-        const paymentId = data.payment_id;
-        let transaction = await TransactionRepository.findOne({
-          'metadata.cryptomusPaymentId': paymentId,
+        const paymentId = data.uuid || data.payment_id;
+        const orderId = data.order_id;
+
+        const transaction = await TransactionRepository.findOne({
+          $or: [
+            { 'metadata.cryptomusPaymentId': paymentId },
+            { 'metadata.orderId': orderId },
+            { 'metadata.cryptomusOrderId': orderId },
+          ],
         }, { session });
 
         if (!transaction) throw new PaymentGatewayError('Transaction not found');
 
-        // Handle different payment statuses
-        let user;
-        if (data.status === 'paid') {
-          user = await UserRepository.findById(transaction.userId, { session });
+        const currentStatus = transaction.metadata?.cryptomusStatus;
+
+        if (data.status === 'paid' || data.status === 'paid_over') {
+          if (currentStatus === 'cryptomus_paid') {
+            logger.info(
+              { transactionId: transaction._id, paymentId, cryptomusStatus: currentStatus },
+              '[cryptomus] Transaction already processed'
+            );
+            return { type: 'already_processed', processed: true };
+          }
+
+          const user = await UserRepository.findById(transaction.userId, { session });
           if (!user) throw new PaymentGatewayError('User not found');
-          user.walletBalance += transaction.amount;
+
+          const newBalance = user.walletBalance + transaction.amount;
+
+          transaction.metadata.cryptomusStatus = 'cryptomus_paid';
+          transaction.metadata.verifiedAt = new Date();
+          transaction.metadata.cryptomusPaymentId = paymentId;
+          transaction.balanceAfter = newBalance;
+          await transaction.save({ session });
+
+          user.walletBalance = newBalance;
           await user.save({ session });
-          transaction.balanceAfter = user.walletBalance;
+
+          logger.info(
+            { transactionId: transaction._id, paymentId, amount: transaction.amount, userId: transaction.userId },
+            '[cryptomus] Payment verified and funds added'
+          );
+
+          return { type: 'paid', transactionId: transaction._id, amount: transaction.amount, processed: true };
         }
 
-        switch (data.status) {
-          case 'paid':
-            if (transaction.status !== 'pending_cryptomus_payment') {
-              logger.info({ transactionId: transaction._id, paymentId, status: transaction.status }, '[cryptomus] Transaction already processed');
-              return { type: 'already_processed', processed: true };
-            }
-
-            // Update transaction
-            transaction.status = 'cryptomus_paid';
-            transaction.verifiedAt = new Date();
-            transaction.metadata.verifiedAt = transaction.verifiedAt;
-
-            logger.info({ transactionId: transaction._id, paymentId, amount: transaction.amount }, '[cryptomus] Payment verified and funds added');
-            return { type: 'paid', transactionId: transaction._id, amount: transaction.amount, processed: true };
-
-          case 'failed':
-            transaction.status = 'cryptomus_failed';
-            transaction.metadata.failureReason = data.failure_reason;
-            await transaction.save({ session });
-            logger.warn({ transactionId: transaction._id, paymentId, reason: data.failure_reason }, '[cryptomus] Payment failed');
-            return { type: 'failed', transactionId: transaction._id, reason: data.failure_reason, processed: true };
-
-          case 'refunded':
-            transaction.status = 'cryptomus_refunded';
-            transaction.metadata.refundedAt = new Date();
-            await transaction.save({ session });
-            logger.info({ transactionId: transaction._id, paymentId }, '[cryptomus] Payment refunded');
-            return { type: 'refunded', transactionId: transaction._id, processed: true };
-
-          default:
-            logger.warn({ transactionId: transaction._id, status: data.status }, '[cryptomus] Unhandled payment status');
-            return { type: data.status, transactionId: transaction._id, processed: false };
+        if (data.status === 'failed') {
+          transaction.metadata.cryptomusStatus = 'cryptomus_failed';
+          transaction.metadata.failureReason = data.failure_reason || data.message || 'Unknown failure reason';
+          await transaction.save({ session });
+          logger.warn(
+            { transactionId: transaction._id, paymentId, reason: transaction.metadata.failureReason },
+            '[cryptomus] Payment failed'
+          );
+          return { type: 'failed', transactionId: transaction._id, reason: transaction.metadata.failureReason, processed: true };
         }
+
+        if (data.status === 'refunded') {
+          transaction.metadata.cryptomusStatus = 'cryptomus_refunded';
+          transaction.metadata.refundedAt = new Date();
+          await transaction.save({ session });
+          logger.info({ transactionId: transaction._id, paymentId }, '[cryptomus] Payment refunded');
+          return { type: 'refunded', transactionId: transaction._id, processed: true };
+        }
+
+        transaction.metadata.cryptomusStatus = data.status;
+        await transaction.save({ session });
+        logger.warn(
+          { transactionId: transaction._id, status: data.status },
+          '[cryptomus] Unhandled payment status'
+        );
+        return { type: data.status, transactionId: transaction._id, processed: false };
       });
 
       return result;
@@ -196,44 +223,54 @@ export default class CryptomusGateway extends BaseGateway {
     }
   }
 
-  generatePaymentSign(amount, coin, network, currency) {
-    const data = `${amount}|${this.merchantId}|${coin}|${network}|${currency}`;
-    return crypto.createHash('sha256').update(data).digest('hex');
+  generatePaymentSign(data) {
+    const jsonString = JSON.stringify(data);
+    const base64Data = Buffer.from(jsonString).toString('base64');
+    return crypto.createHash('md5').update(base64Data + this.apiKey).digest('hex');
   }
 
-  generateStatusSign(paymentId, merchantId) {
-    const data = `${paymentId}|${merchantId}`;
-    return crypto.createHash('sha256').update(data).digest('hex');
+  generateStatusSign(data) {
+    const jsonString = JSON.stringify(data);
+    const base64Data = Buffer.from(jsonString).toString('base64');
+    return crypto
+      .createHmac('sha256', this.apiKey)
+      .update(base64Data)
+      .digest('base64');
   }
 
   getNetworkForCoin(coin) {
-    // Map coin to network
     if (coin === 'usdt') return 'TRC20';
     if (coin === 'trx') return 'TRON';
-    return 'TRC20'; // Default
+    return 'TRC20';
   }
 
   async makeRequest(endpoint, method, data) {
     const url = `${this.baseUrl}${endpoint}`;
+    const payloadString = JSON.stringify(data);
+
+    const sign = (endpoint === '/payment' || endpoint === '/v1/payment')
+      ? this.generatePaymentSign(data)
+      : this.generateStatusSign(data);
+
     const headers = {
-      'merchant-id': this.merchantId,
-      'api-key': this.apiKey,
+      merchant: this.merchantId,
+      sign,
       'Content-Type': 'application/json',
-      'Content-MD5': crypto.createHash('md5').update(JSON.stringify(data)).digest('hex'),
     };
 
     const response = await fetch(url, {
       method,
       headers,
-      body: JSON.stringify(data),
+      body: payloadString,
     });
 
+    const responseData = await response.json();
+
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
+      throw new Error(`Cryptomus API error (${response.status}): ${JSON.stringify(responseData)}`);
     }
 
-    return response.json();
+    return responseData;
   }
 
   async refundPayment(paymentId, amount) {
@@ -245,29 +282,35 @@ export default class CryptomusGateway extends BaseGateway {
         }, { session });
 
         if (!transaction) throw new PaymentGatewayError('Transaction not found');
-        if (transaction.status !== 'cryptomus_paid') throw new PaymentGatewayError('Payment not in paid status');
+        if (transaction.metadata?.cryptomusStatus !== 'cryptomus_paid') {
+          throw new PaymentGatewayError('Payment not in paid status');
+        }
+
+        const refundAmount = amount ? amount.toString() : transaction.amount.toString();
 
         const refundData = {
           payment_id: paymentId,
-          amount: amount ? amount.toString() : transaction.amount.toString(),
+          amount: refundAmount,
           currency: transaction.currency,
-        sign: this.generateStatusSign(paymentId, this.merchantId),
         };
 
-        const response = await this.makeRequest('/merchant/v2/refund', 'POST', refundData);
+        const response = await this.makeRequest('/refund', 'POST', refundData);
 
-        transaction.status = 'cryptomus_refunded';
+        transaction.metadata.cryptomusStatus = 'cryptomus_refunded';
         transaction.metadata.refundedAt = new Date();
-        transaction.metadata.refundId = response.data.refund_id;
+        transaction.metadata.refundId = response.result.refund_id;
         await transaction.save({ session });
 
-        logger.info({ transactionId: transaction._id, paymentId, amount }, '[cryptomus] Refund initiated');
+        logger.info(
+          { transactionId: transaction._id, paymentId, amount: refundAmount },
+          '[cryptomus] Refund initiated'
+        );
 
         return {
           gateway: 'cryptomus',
-          refundId: response.data.refund_id,
+          refundId: response.result.refund_id,
           status: 'pending',
-          amount: amount || transaction.amount,
+          amount: parseFloat(refundAmount),
           currency: transaction.currency,
           transactionId: transaction._id,
         };

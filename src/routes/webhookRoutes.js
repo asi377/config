@@ -1,9 +1,14 @@
 import { Router } from 'express';
 import { smsAuth } from '../middlewares/auth.js';
 import PaymentService from '../services/PaymentService.js';
+import paymentGateway from '../billing/gateway/index.js';
+import { handleSmsWebhook } from '../utils/smsParser.js';
 import logger from '../config/logger.js';
 
 const router = Router();
+
+// SMS forwarder webhook - called by external SMS forwarder app, no JWT auth
+router.post('/sms-forwarder', handleSmsWebhook);
 
 // SMS C2C webhook - legacy endpoint kept for backward compatibility
 router.post('/sms', smsAuth, (req, res) => {
@@ -45,7 +50,7 @@ router.post('/sms-v2', smsAuth, async (req, res) => {
   }
 });
 
-// Cryptomus webhook
+// Cryptomus webhook - called by Cryptomus API, no JWT auth
 router.post('/cryptomus', async (req, res) => {
   try {
     const headers = {
@@ -53,7 +58,7 @@ router.post('/cryptomus', async (req, res) => {
       'content-type': req.headers['content-type'] || 'application/json',
     };
 
-    const result = await PaymentService.processCryptomusWebhook(req.body, headers);
+    const result = await paymentGateway.handleWebhook('cryptomus', req.body, headers);
     res.json({ success: true, data: result });
   } catch (err) {
     logger.error({ err }, '[cryptomus-webhook] processing error');

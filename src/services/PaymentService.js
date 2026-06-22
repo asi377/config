@@ -7,6 +7,7 @@ import { extractBankMelliAmount } from '../utils/smsParser.js';
 import subscriptionService from './SubscriptionService.js';
 import logger from '../config/logger.js';
 import paymentGateway from '../billing/gateway/index.js';
+import config from '../config/index.js';
 import SmsC2CGateway from '../billing/gateway/SmsC2CGateway.js';
 import CryptomusGateway from '../billing/gateway/CryptomusGateway.js';
 
@@ -116,13 +117,11 @@ class PaymentService extends BaseService {
     }
 
     try {
-      // Mark receipt as sms_matched (requires admin approval to complete)
       receipt.status = 'sms_matched';
       receipt.smsMatchedAt = new Date();
       await receipt.save();
       logger.info({ receiptId: receipt._id, amount }, '[sms-webhook] matched to receipt, pending admin approval');
 
-      // Notify admins about the match
       const adminUser = await UserRepository.findOne({ role: 'superadmin' }, { sort: { createdAt: 1 } });
       if (adminUser?.telegramId && _botInstance) {
         await _botInstance.telegram.sendMessage(
@@ -150,9 +149,8 @@ class PaymentService extends BaseService {
   // === SMS C2C Gateway methods ===
 
   processSmsC2CWebhook = this.wrapMethod(async (_smsText, _botInstance) => {
-    const smsC2CGateway = new SmsC2CGateway();
     try {
-      const result = await smsC2CGateway.handleWebhook({ text: _smsText }, {});
+      const result = await paymentGateway.handleWebhook('sms_c2c', { text: _smsText }, {});
       return result;
     } catch (err) {
       logger.error({ err, smsPreview: _smsText?.slice(0, 100) }, '[sms-c2c-webhook] processing error');
@@ -161,9 +159,8 @@ class PaymentService extends BaseService {
   });
 
   createSmsC2CPayment = this.wrapMethod(async (userId, amount) => {
-    const smsC2CGateway = new SmsC2CGateway();
     const metadata = { userId };
-    const result = await smsC2CGateway.createPayment(amount, 'irr', metadata);
+    const result = await paymentGateway.createPayment(amount, 'irr', metadata, 'sms_c2c');
 
     logger.info({ userId, amount, uniqueAmount: result.uniqueAmount }, '[payment] SMS C2C payment created');
     return {
@@ -179,9 +176,8 @@ class PaymentService extends BaseService {
   // === Cryptomus Gateway methods ===
 
   processCryptomusWebhook = this.wrapMethod(async (payload, headers) => {
-    const cryptomusGateway = new CryptomusGateway();
     try {
-      const result = await cryptomusGateway.handleWebhook(payload, headers);
+      const result = await paymentGateway.handleWebhook('cryptomus', payload, headers);
       return result;
     } catch (err) {
       logger.error({ err }, '[cryptomus-webhook] processing error');
@@ -190,9 +186,8 @@ class PaymentService extends BaseService {
   });
 
   createCryptomusPayment = this.wrapMethod(async (userId, amount) => {
-    const cryptomusGateway = new CryptomusGateway();
     const metadata = { userId };
-    const result = await cryptomusGateway.createPayment(amount, 'usd', metadata);
+    const result = await paymentGateway.createPayment(amount, 'usd', metadata, 'cryptomus');
 
     logger.info({ userId, amount, paymentId: result.paymentId }, '[payment] Cryptomus payment created');
     return {
@@ -207,7 +202,7 @@ class PaymentService extends BaseService {
     };
   });
 
-  // === Unified payment methods ===
+  // === Unified deposit/payment generation ===
 
   submitPayment = this.wrapMethod(async (userId, planId, amount, gateway = null, metadata = {}) => {
     const receipt = await ReceiptRepository.create({ userId, planId, amount, metadata });
@@ -243,7 +238,23 @@ class PaymentService extends BaseService {
       }
     }
 
-    const paymentResult = await paymentGateway.createPayment(amount, 'irr', { userId, receiptId: receipt._id, planId, ...metadata }, gateway);
+    let paymentResult;
+    if (gateway === 'sms_c2c') {
+      const smsGateway = new SmsC2CGateway();
+      paymentResult = await smsGateway.createPayment(amount, 'irr', { userId, receiptId: receipt._id, planId, ...metadata });
+    } else if (gateway === 'crypto') {
+      const cryptomusCfg = config.cryptomus || {};
+      const cryptoGateway = new CryptomusGateway({
+        apiKey: cryptomusCfg.apiKey,
+        merchantId: cryptomusCfg.merchantId,
+        webhookSecret: cryptomusCfg.webhookSecret,
+        backendUrl: config.backendUrl,
+        frontendUrl: config.corsOrigin,
+      });
+      paymentResult = await cryptoGateway.createPayment(amount, 'usd', { userId, receiptId: receipt._id, planId, ...metadata });
+    } else {
+      paymentResult = await paymentGateway.createPayment(amount, 'irr', { userId, receiptId: receipt._id, planId, ...metadata }, gateway);
+    }
 
     receipt.status = 'pending_payment';
     receipt.gatewayPaymentId = paymentResult.paymentId || paymentResult.transactionId || paymentResult.orderId;

@@ -44,6 +44,11 @@ const config = {
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     enabled: !!process.env.STRIPE_SECRET_KEY,
   },
+  cryptomus: {
+    apiKey: process.env.CRYPTOMUS_API_KEY,
+    merchantId: process.env.CRYPTOMUS_MERCHANT_ID,
+    webhookSecret: process.env.CRYPTOMUS_WEBHOOK_SECRET,
+  },
 };
 
 const required = ['botToken', 'jwt.secret', 'adminApiKey', 'nodeSecret'];
