@@ -2,15 +2,53 @@ import BaseService from '../../shared/BaseService.js';
 import SubscriptionRepository from '../../repositories/SubscriptionRepository.js';
 import UserRepository from '../../repositories/UserRepository.js';
 import TunnelConfigRepository from '../../repositories/TunnelConfigRepository.js';
+import ServerRepository from '../../repositories/ServerRepository.js';
 import EventBus from '../../events/EventBus.js';
 import logger from '../../config/logger.js';
 
 class UsageService extends BaseService {
-  async trackUsage(subscriptionId, bytesUsed) {
+  /**
+   * Record consumed bytes for a subscription, applying the server's
+   * traffic coefficient before persisting.
+   *
+   * @param {string} subscriptionId
+   * @param {number} bytesUsed  - Raw bytes reported by the node agent.
+   * @param {string|null} serverId - The server that reported the traffic.
+   *   When provided, the server's `coefficient` field is fetched and the
+   *   reported bytes are multiplied by it before deduction.
+   *   e.g. coefficient 1.5 → 100 MB reported = 150 MB charged.
+   *
+   * @returns {{ action: string, usagePercent: number, chargedBytes: number }}
+   */
+  async trackUsage(subscriptionId, bytesUsed, serverId = null) {
     const sub = await SubscriptionRepository.findById(subscriptionId);
     if (!sub || sub.status !== 'active') return { action: 'skipped' };
 
-    sub.usedVolumeBytes = Math.min(sub.usedVolumeBytes + bytesUsed, sub.totalVolumeBytes);
+    // ── Apply server coefficient ────────────────────────────────────────────
+    let coefficient = 1.0;
+    if (serverId) {
+      try {
+        const server = await ServerRepository.findById(serverId);
+        if (server?.coefficient != null && server.coefficient > 0) {
+          coefficient = server.coefficient;
+        }
+      } catch (err) {
+        // Non-fatal: fall back to 1.0 so traffic is still recorded
+        logger.warn({ err, serverId }, '[usage] Failed to fetch server coefficient, defaulting to 1.0');
+      }
+    }
+
+    // Use Math.round to avoid floating-point drift accumulating over time
+    const chargedBytes = Math.round(bytesUsed * coefficient);
+
+    if (coefficient !== 1.0) {
+      logger.debug(
+        { subscriptionId, serverId, bytesUsed, coefficient, chargedBytes },
+        '[usage] Coefficient applied',
+      );
+    }
+
+    sub.usedVolumeBytes = Math.min(sub.usedVolumeBytes + chargedBytes, sub.totalVolumeBytes);
     await sub.save();
 
     const usagePercent = sub.totalVolumeBytes > 0
@@ -25,7 +63,7 @@ class UsageService extends BaseService {
         subscriptionId: sub._id,
         userId: sub.ownerId,
       });
-      return { action: 'suspended', usagePercent };
+      return { action: 'suspended', usagePercent, chargedBytes };
     }
 
     if (usagePercent >= 80 && !sub.notified80Percent) {
@@ -36,17 +74,24 @@ class UsageService extends BaseService {
         userId: sub.ownerId,
         usagePercent,
       });
-      return { action: 'warning', usagePercent };
+      return { action: 'warning', usagePercent, chargedBytes };
     }
 
-    return { action: 'ok', usagePercent };
+    return { action: 'ok', usagePercent, chargedBytes };
   }
 
+  /**
+   * Batch variant of trackUsage.
+   * Each entry may include an optional `serverId` so the coefficient is
+   * applied per-server when the batch contains traffic from multiple nodes.
+   *
+   * @param {{ subscriptionId: string, bytesUsed: number, serverId?: string }[]} usages
+   */
   async trackUsageBatch(usages) {
     const results = [];
-    for (const { subscriptionId, bytesUsed } of usages) {
+    for (const { subscriptionId, bytesUsed, serverId = null } of usages) {
       try {
-        const result = await this.trackUsage(subscriptionId, bytesUsed);
+        const result = await this.trackUsage(subscriptionId, bytesUsed, serverId);
         results.push({ subscriptionId, ...result });
       } catch (err) {
         logger.error({ err, subscriptionId }, '[usage] Batch tracking error');

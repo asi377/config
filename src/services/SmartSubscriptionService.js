@@ -37,25 +37,27 @@ function serializeYaml(obj, indent = 0) {
 
   if (Array.isArray(obj)) {
     if (obj.length === 0) return '[]\n';
-    return obj.map(item => {
-      if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
-        const entries = Object.entries(item);
-        const first = entries[0];
-        const rest = entries.slice(1);
-        let out = `${pad}- ${first[0]}: ${serializeYamlValue(first[1], indent + 1).trimEnd()}\n`;
-        for (const [k, v] of rest) {
-          out += `${pad}  ${k}: ${serializeYamlValue(v, indent + 1).trimEnd()}\n`;
+    return obj
+      .map((item) => {
+        if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+          const entries = Object.entries(item);
+          const first = entries[0];
+          const rest = entries.slice(1);
+          let out = `${pad}- ${first[0]}: ${serializeYamlValue(first[1], indent + 1).trimEnd()}\n`;
+          for (const [k, v] of rest) {
+            out += `${pad}  ${k}: ${serializeYamlValue(v, indent + 1).trimEnd()}\n`;
+          }
+          return out;
         }
-        return out;
-      }
-      return `${pad}- ${serializeYamlValue(item, indent + 1).trimEnd()}\n`;
-    }).join('');
+        return `${pad}- ${serializeYamlValue(item, indent + 1).trimEnd()}\n`;
+      })
+      .join('');
   }
 
   if (typeof obj === 'object' && obj !== null) {
-    return Object.entries(obj).map(([k, v]) =>
-      `${pad}${k}: ${serializeYamlValue(v, indent + 1).trimEnd()}\n`,
-    ).join('');
+    return Object.entries(obj)
+      .map(([k, v]) => `${pad}${k}: ${serializeYamlValue(v, indent + 1).trimEnd()}\n`)
+      .join('');
   }
 
   return serializeYamlValue(obj, indent);
@@ -69,8 +71,8 @@ function serializeYamlValue(v, indent) {
   if (Array.isArray(v)) {
     if (v.length === 0) return '[]';
     // Inline array for simple scalar lists (e.g. cipher lists, group names)
-    if (v.every(i => typeof i !== 'object' || i === null)) {
-      return '[' + v.map(i => yamlStr(String(i))).join(', ') + ']';
+    if (v.every((i) => typeof i !== 'object' || i === null)) {
+      return '[' + v.map((i) => yamlStr(String(i))).join(', ') + ']';
     }
     return '\n' + serializeYaml(v, indent);
   }
@@ -87,12 +89,12 @@ function toYaml(doc) {
 // ─── User-Agent detection ─────────────────────────────────────────────────────
 
 const UA_FORMATS = {
-  CLASH:    /clash/i,
-  SINGBOX:  /sing-box|singbox/i,
+  CLASH: /clash/i,
+  SINGBOX: /sing-box|singbox/i,
 };
 
 function detectFormat(userAgent = '') {
-  if (UA_FORMATS.CLASH.test(userAgent))   return 'clash';
+  if (UA_FORMATS.CLASH.test(userAgent)) return 'clash';
   if (UA_FORMATS.SINGBOX.test(userAgent)) return 'singbox';
   return 'base64';
 }
@@ -106,16 +108,16 @@ function detectFormat(userAgent = '') {
  * Returns { vmessLinks[], vlessLinks[], trojanLinks[], clashProxies[], singboxOutbounds[] }
  */
 function buildServerConfigs(uuid, servers) {
-  const vmessLinks   = [];
-  const vlessLinks   = [];
-  const trojanLinks  = [];
+  const vmessLinks = [];
+  const vlessLinks = [];
+  const trojanLinks = [];
   const clashProxies = [];
   const singboxOutbounds = [];
 
   for (const server of servers) {
     const host = server.domain || server.ipAddress;
     const port = server.port;
-    const tag  = server.name || `HORNET-${host}`;
+    const tag = server.name ? `${server.name}-${port}` : `HORNET-${host}-${port}`;
 
     // ── VLESS share link ──────────────────────────────────────────────────
     const vlessCfg = ConfigGeneratorService.generateVLESSConfig({ uuid, server, port });
@@ -132,48 +134,48 @@ function buildServerConfigs(uuid, servers) {
     // ── Clash proxy entries ───────────────────────────────────────────────
     // VLESS (Reality)
     clashProxies.push({
-      name:     `${tag}-vless`,
-      type:     'vless',
-      server:   host,
+      name: `${tag}-vless`,
+      type: 'vless',
+      server: host,
       port,
       uuid,
-      tls:      true,
-      network:  'tcp',
+      tls: true,
+      network: 'tcp',
       'client-fingerprint': 'chrome',
     });
 
     // Trojan
     clashProxies.push({
-      name:     `${tag}-trojan`,
-      type:     'trojan',
-      server:   host,
+      name: `${tag}-trojan`,
+      type: 'trojan',
+      server: host,
       port,
       password: uuid,
-      sni:      host,
+      sni: host,
     });
 
     // ── Sing-box outbounds ────────────────────────────────────────────────
     singboxOutbounds.push({
-      type:        'vless',
-      tag:         `${tag}-vless`,
-      server:      host,
+      type: 'vless',
+      tag: `${tag}-vless`,
+      server: host,
       server_port: port,
       uuid,
       tls: {
-        enabled:    true,
+        enabled: true,
         server_name: host,
         utls: { enabled: true, fingerprint: 'chrome' },
       },
     });
 
     singboxOutbounds.push({
-      type:        'trojan',
-      tag:         `${tag}-trojan`,
-      server:      host,
+      type: 'trojan',
+      tag: `${tag}-trojan`,
+      server: host,
       server_port: port,
-      password:    uuid,
+      password: uuid,
       tls: {
-        enabled:    true,
+        enabled: true,
         server_name: host,
       },
     });
@@ -185,36 +187,33 @@ function buildServerConfigs(uuid, servers) {
 // ── Clash YAML ────────────────────────────────────────────────────────────────
 
 function buildClashYaml(proxies, subscriptionName) {
-  const proxyNames = proxies.map(p => p.name);
+  const proxyNames = proxies.map((p) => p.name);
 
   const doc = {
-    'mixed-port':     7890,
-    'allow-lan':      false,
-    mode:             'rule',
-    'log-level':      'info',
+    'mixed-port': 7890,
+    'allow-lan': false,
+    mode: 'rule',
+    'log-level': 'info',
     'external-controller': '127.0.0.1:9090',
 
     proxies,
 
     'proxy-groups': [
       {
-        name:    subscriptionName || 'HORNET',
-        type:    'select',
+        name: subscriptionName || 'HORNET',
+        type: 'select',
         proxies: ['DIRECT', ...proxyNames],
       },
       {
-        name:    'Auto',
-        type:    'url-test',
+        name: 'Auto',
+        type: 'url-test',
         proxies: proxyNames,
-        url:     'http://www.gstatic.com/generate_204',
+        url: 'http://www.gstatic.com/generate_204',
         interval: 300,
       },
     ],
 
-    rules: [
-      'GEOIP,IR,DIRECT',
-      'MATCH,' + (subscriptionName || 'HORNET'),
-    ],
+    rules: ['GEOIP,IR,DIRECT', 'MATCH,' + (subscriptionName || 'HORNET')],
   };
 
   return toYaml(doc);
@@ -223,58 +222,56 @@ function buildClashYaml(proxies, subscriptionName) {
 // ── Sing-box JSON ─────────────────────────────────────────────────────────────
 
 function buildSingBoxJson(outbounds, subscriptionName) {
-  const tags = outbounds.map(o => o.tag);
+  const tags = outbounds.map((o) => o.tag);
 
   return {
-    log:   { level: 'info', timestamp: true },
+    log: { level: 'info', timestamp: true },
     dns: {
       servers: [
-        { tag: 'google',  address: 'https://dns.google/dns-query' },
-        { tag: 'local',   address: '223.5.5.5', detour: 'direct' },
+        { tag: 'google', address: 'https://dns.google/dns-query' },
+        { tag: 'local', address: '223.5.5.5', detour: 'direct' },
       ],
-      rules: [
-        { geoip: ['ir'], server: 'local' },
-      ],
+      rules: [{ geoip: ['ir'], server: 'local' }],
     },
     inbounds: [
       {
-        type:         'mixed',
-        tag:          'mixed-in',
-        listen:       '127.0.0.1',
-        listen_port:  2080,
+        type: 'mixed',
+        tag: 'mixed-in',
+        listen: '127.0.0.1',
+        listen_port: 2080,
       },
       {
-        type:         'tun',
-        tag:          'tun-in',
+        type: 'tun',
+        tag: 'tun-in',
         inet4_address: '172.19.0.1/30',
-        auto_route:   true,
+        auto_route: true,
         strict_route: false,
       },
     ],
     outbounds: [
       {
         type: 'selector',
-        tag:  subscriptionName || 'HORNET',
+        tag: subscriptionName || 'HORNET',
         outbounds: ['auto', 'direct', ...tags],
       },
       {
-        type:      'urltest',
-        tag:       'auto',
+        type: 'urltest',
+        tag: 'auto',
         outbounds: tags,
-        url:       'https://www.gstatic.com/generate_204',
-        interval:  '5m',
+        url: 'https://www.gstatic.com/generate_204',
+        interval: '5m',
         tolerance: 50,
       },
       ...outbounds,
       { type: 'direct', tag: 'direct' },
-      { type: 'block',  tag: 'block'  },
-      { type: 'dns',    tag: 'dns-out' },
+      { type: 'block', tag: 'block' },
+      { type: 'dns', tag: 'dns-out' },
     ],
     route: {
       rules: [
-        { protocol: 'dns',  outbound: 'dns-out' },
-        { geoip: ['ir'],    outbound: 'direct'  },
-        { geosite: ['ir'],  outbound: 'direct'  },
+        { protocol: 'dns', outbound: 'dns-out' },
+        { geoip: ['ir'], outbound: 'direct' },
+        { geosite: ['ir'], outbound: 'direct' },
       ],
       auto_detect_interface: true,
     },
@@ -309,17 +306,12 @@ class SmartSubscriptionService {
     }
 
     // 2. Load parent subscription to get a friendly name
-    const sub = await SubscriptionRepository.findById(
-      tunnelConfig.subscriptionId.toString(),
-      { populate: 'planId' },
-    );
+    const sub = await SubscriptionRepository.findById(tunnelConfig.subscriptionId.toString(), { populate: 'planId' });
     const subscriptionName = sub?.planId?.title || 'HORNET';
 
     // 3. Load all healthy active servers
     const servers = await ServerRepository.findActive();
-    const healthyServers = servers.filter(
-      s => s.healthStatus !== 'unhealthy' && s.status === 'active',
-    );
+    const healthyServers = servers.filter((s) => s.healthStatus !== 'unhealthy' && s.status === 'active');
 
     if (healthyServers.length === 0) {
       logger.warn({ uuid }, '[smart-sub] No healthy servers available');
@@ -327,8 +319,10 @@ class SmartSubscriptionService {
     }
 
     // 4. Build per-server configs
-    const { vmessLinks, vlessLinks, trojanLinks, clashProxies, singboxOutbounds } =
-      buildServerConfigs(uuid, healthyServers);
+    const { vmessLinks, vlessLinks, trojanLinks, clashProxies, singboxOutbounds } = buildServerConfigs(
+      uuid,
+      healthyServers,
+    );
 
     // 5. Detect format from User-Agent
     const format = detectFormat(userAgent);

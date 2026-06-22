@@ -98,6 +98,13 @@ const serverSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    coefficient: {
+      type: Number,
+      required: true,
+      default: 1.0,
+      min: [0.1, 'Coefficient must be at least 0.1'],
+      max: [10.0, 'Coefficient cannot exceed 10.0'],
+    },
     lastCredentialRotation: {
       type: Date,
       default: null,

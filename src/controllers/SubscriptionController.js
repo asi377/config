@@ -2,7 +2,7 @@
  * SubscriptionController
  *
  * Handles the public subscription endpoint:
- *   GET /sub/:uuid
+ * GET /sub/:uuid
  *
  * Detects client User-Agent and delegates rendering to SmartSubscriptionService.
  */
@@ -16,19 +16,16 @@ class SubscriptionController {
    *
    * No authentication required — the UUID itself is the opaque token.
    * The response format is negotiated from the User-Agent header:
-   *   - Clash      → text/yaml
-   *   - Sing-box   → application/json
-   *   - Other      → text/plain (Base64)
+   * - Clash      → text/yaml
+   * - Sing-box   → application/json
+   * - Other      → text/plain (Base64)
    */
   async getSubscription(req, res, next) {
     try {
       const { uuid } = req.params;
       const userAgent = req.headers['user-agent'] || '';
 
-      logger.info(
-        { uuid, userAgent, ip: req.ip },
-        '[sub] Subscription fetch',
-      );
+      logger.info({ uuid, userAgent, ip: req.ip }, '[sub] Subscription fetch');
 
       const result = await SmartSubscriptionService.render(uuid, userAgent);
 
@@ -41,7 +38,8 @@ class SubscriptionController {
 
       // Subscription-info header (compatible with Clash / Sing-box clients)
       if (result.format !== 'base64') {
-        res.setHeader('Subscription-Userinfo', _buildUserInfoHeader(req._subInfo));
+        // ✨ فیکس انجام شد: استفاده از result.subInfo به جای req._subInfo
+        res.setHeader('Subscription-Userinfo', _buildUserInfoHeader(result.subInfo));
         res.setHeader('Profile-Title', 'HORNET');
         res.setHeader('Support-Url', 'https://t.me/support');
         res.setHeader('Profile-Update-Interval', '6'); // hours
@@ -60,10 +58,10 @@ class SubscriptionController {
 function _buildUserInfoHeader(info) {
   if (!info) return '';
   const parts = [];
-  if (info.upload    != null) parts.push(`upload=${info.upload}`);
-  if (info.download  != null) parts.push(`download=${info.download}`);
-  if (info.total     != null) parts.push(`total=${info.total}`);
-  if (info.expire    != null) parts.push(`expire=${info.expire}`);
+  if (info.upload != null) parts.push(`upload=${info.upload}`);
+  if (info.download != null) parts.push(`download=${info.download}`);
+  if (info.total != null) parts.push(`total=${info.total}`);
+  if (info.expire != null) parts.push(`expire=${info.expire}`);
   return parts.join('; ');
 }
 
