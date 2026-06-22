@@ -54,6 +54,15 @@ const userSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    isReseller: {
+      type: Boolean,
+      default: false,
+    },
+    referralCommission: {
+      type: Number,
+      default: 0,
+      min: [0, 'Commission cannot be negative'],
+    },
   },
   {
     timestamps: true,

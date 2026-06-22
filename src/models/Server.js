@@ -113,6 +113,19 @@ const serverSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    tags: {
+      type: [String],
+      default: [],
+    },
+    isDedicated: {
+      type: Boolean,
+      default: false,
+    },
+    dedicatedTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     metadata: {
       type: mongoose.Schema.Types.Mixed,
       default: {},

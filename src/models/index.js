@@ -15,3 +15,4 @@ export { default as FraudLog } from './FraudLog.js';
 export { default as ServerMetrics } from './ServerMetrics.js';
 export { default as ProvisionLog } from './ProvisionLog.js';
 export { default as HealthCheckLog } from './HealthCheckLog.js';
+export { default as BotConfig } from './BotConfig.js';

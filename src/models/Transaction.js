@@ -33,6 +33,11 @@ const transactionSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    uniqueAmount: {
+      type: Number,
+      default: null,
+      min: [0, 'Unique amount cannot be negative'],
+    },
     description: {
       type: String,
       default: '',
