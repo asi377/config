@@ -37,13 +37,12 @@ class SubscriptionController {
       }
 
       // Subscription-info header (compatible with Clash / Sing-box clients)
-      if (result.format !== 'base64') {
-        // ✨ فیکس انجام شد: استفاده از result.subInfo به جای req._subInfo
+      if (result.subInfo) {
         res.setHeader('Subscription-Userinfo', _buildUserInfoHeader(result.subInfo));
-        res.setHeader('Profile-Title', 'HORNET');
-        res.setHeader('Support-Url', 'https://t.me/support');
-        res.setHeader('Profile-Update-Interval', '6'); // hours
       }
+      res.setHeader('Profile-Title', 'HORNET');
+      res.setHeader('Support-Url', 'https://t.me/support');
+      res.setHeader('Profile-Update-Interval', '6'); // hours
 
       res.setHeader('Content-Type', result.contentType);
       res.setHeader('Cache-Control', 'no-store, no-cache');

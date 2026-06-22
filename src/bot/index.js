@@ -41,6 +41,9 @@ export function createBot() {
   bot.action('free_trial', userController.handleFreeTrial);
   bot.action(/^checkout_confirm_(.+)$/, userController.handleCheckoutConfirm);
 
+  bot.action('get_config', userController.handleGetConfig);
+  bot.action(/^config_client_(.+)$/, userController.handleConfigClientPick);
+
   bot.command('admin', adminController.adminCommand);
   bot.action('admin_metrics', adminController.handleAdminMetrics);
   bot.action('admin_backup', adminController.handleAdminBackup);

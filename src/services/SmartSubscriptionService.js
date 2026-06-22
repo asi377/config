@@ -20,7 +20,7 @@ import logger from '../config/logger.js';
 // Supports: string, number, boolean, null, plain array, plain object.
 // Strings that need quoting are double-quoted; everything else is unquoted.
 
-const NEEDS_QUOTE = /[:#\[\]{},&*?|<>=!%@`\n\r\t]|^[\s-]|[\s]$/;
+const NEEDS_QUOTE = /[:#\[\]{},&*?|<>=!%@`\n\r\t]|^[\s-]|[\s]$/; // eslint-disable-line no-useless-escape
 
 function yamlStr(v) {
   if (v === null || v === undefined) return 'null';
@@ -324,7 +324,14 @@ class SmartSubscriptionService {
       healthyServers,
     );
 
-    // 5. Detect format from User-Agent
+    // 5. Build subscription user-info for header
+    const upload   = tunnelConfig.usedQuotaBytes ?? sub?.usedVolumeBytes ?? 0;
+    const download = 0;
+    const total    = tunnelConfig.allocatedQuotaBytes ?? sub?.totalVolumeBytes ?? 0;
+    const expire   = sub?.expireDate ? Math.floor(new Date(sub.expireDate).getTime() / 1000) : 0;
+    const subInfo  = { upload, download, total, expire };
+
+    // 6. Detect format from User-Agent
     const format = detectFormat(userAgent);
     logger.debug({ uuid, userAgent, format }, '[smart-sub] Rendering subscription');
 
@@ -335,6 +342,7 @@ class SmartSubscriptionService {
           contentType: 'text/yaml; charset=utf-8',
           body: yaml,
           format: 'clash',
+          subInfo,
         };
       }
 
@@ -344,6 +352,7 @@ class SmartSubscriptionService {
           contentType: 'application/json; charset=utf-8',
           body: JSON.stringify(json, null, 2),
           format: 'singbox',
+          subInfo,
         };
       }
 
@@ -353,6 +362,7 @@ class SmartSubscriptionService {
           contentType: 'text/plain; charset=utf-8',
           body: base64,
           format: 'base64',
+          subInfo,
         };
       }
     }

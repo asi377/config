@@ -1,15 +1,38 @@
+/**
+ * userController.js
+ *
+ * Handles all end-user bot interactions.
+ * Admin actions are fully separated in adminController.js.
+ *
+ * New in this version:
+ *  - Dynamic panels via generateUserPanel(user, sub)
+ *  - Client-type picker → generateClientPickerKeyboard(subId)
+ *  - SmartSubscriptionService for per-client config delivery
+ *  - on_hold status displayed correctly
+ */
+
 import UserService from '../../services/UserService.js';
 import PlanService from '../../services/PlanService.js';
 import SubscriptionService from '../../services/SubscriptionService.js';
 import PaymentService from '../../services/PaymentService.js';
+import SmartSubscriptionService from '../../services/SmartSubscriptionService.js';
 import SubscriptionRepository from '../../repositories/SubscriptionRepository.js';
+import TunnelConfigRepository from '../../repositories/TunnelConfigRepository.js';
 import SettingRepository from '../../repositories/SettingRepository.js';
 import Subscription from '../../models/Subscription.js';
 import { Markup } from 'telegraf';
 import { formatRials, formatBytes, formatDate, formatError } from '../utils.js';
-import { mainMenuKeyboard, subscriptionActionsKeyboard } from '../keyboards.js';
+import {
+  mainMenuKeyboard,
+  generateUserPanel,
+  generateClientPickerKeyboard,
+  subscriptionActionsKeyboard,
+  generatePlansKeyboard,
+} from '../keyboards.js';
 
-async function safeEdit(ctx, text, extra) {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+export async function safeEdit(ctx, text, extra) {
   try {
     await ctx.editMessageText(text, extra);
   } catch (err) {
@@ -29,27 +52,50 @@ async function checkChannelMembership(ctx) {
   }
 }
 
-async function getSubscriptionSummary(sub, plan, server) {
-  const remaining = sub.remainingVolumeBytes;
+// Maps subscription status to a human-readable Farsi label + emoji
+function subStatusLabel(status) {
+  const map = {
+    active:               '✅ فعال',
+    on_hold:              '⏳ در انتظار اتصال',
+    expired:              '⚠️ منقضی شده',
+    suspended:            '🚫 معلق',
+    cancelled:            '❌ لغو شده',
+    pending_payment:      '💳 در انتظار پرداخت',
+    pending_shared_payment: '💳 پرداخت مشترک',
+    trial:                '🎁 آزمایشی',
+  };
+  return map[status] || status;
+}
+
+export async function getSubscriptionSummary(sub, plan, server) {
+  const remaining   = sub.remainingVolumeBytes ?? Math.max(0, sub.totalVolumeBytes - sub.usedVolumeBytes);
   const usagePercent = sub.totalVolumeBytes > 0
     ? ((sub.usedVolumeBytes / sub.totalVolumeBytes) * 100).toFixed(1)
     : '0.0';
-  const statusEmoji = sub.status === 'active' ? '✅' : sub.status === 'expired' ? '⚠️' : '🚫';
-  const planTitle = plan?.title || 'طرح';
+
+  const planTitle  = plan?.title || 'طرح';
   const serverName = server?.name || '—';
 
-  return [
-    `${statusEmoji} *${planTitle}*`,
-    `📊 وضعیت: ${sub.status === 'active' ? 'فعال' : sub.status === 'expired' ? 'منقضی شده' : 'مسدود'}`,
+  const lines = [
+    `${subStatusLabel(sub.status)} *${planTitle}*`,
     `💾 مصرف: ${formatBytes(sub.usedVolumeBytes)} از ${formatBytes(sub.totalVolumeBytes)} (${usagePercent}%)`,
     `📋 باقی‌مانده: ${formatBytes(remaining)}`,
-    `📅 شروع: ${formatDate(sub.startDate)}`,
-    `📅 انقضا: ${formatDate(sub.expireDate)}`,
     `🖥 سرور: ${serverName}`,
-  ].filter(Boolean).join('\n');
+  ];
+
+  if (sub.status === 'on_hold') {
+    lines.push('ℹ️ تایمر اشتراک پس از اولین اتصال آغاز می‌شود.');
+  } else {
+    lines.push(`📅 شروع: ${formatDate(sub.activatedAt || sub.startDate)}`);
+    lines.push(`📅 انقضا: ${formatDate(sub.expireDate)}`);
+  }
+
+  return lines.join('\n');
 }
 
-async function startCommand(ctx) {
+// ─── /start ───────────────────────────────────────────────────────────────────
+
+export async function startCommand(ctx) {
   try {
     const referralCode = ctx.payload?.trim().toUpperCase() || null;
     ctx.user = await UserService.resolveUser(ctx.from.id, referralCode);
@@ -57,15 +103,19 @@ async function startCommand(ctx) {
     const isMember = await checkChannelMembership(ctx);
     if (!isMember) {
       const channelId = process.env.CHANNEL_ID;
-      await ctx.replyWithMarkdown(
+      return ctx.replyWithMarkdown(
         '🚫 *خوش آمدید*\n\n' +
         'برای استفاده از خدمات HORNET، لطفاً ابتدا در کانال ما عضو شوید:\n\n' +
         (channelId ? `👉 [عضویت در کانال](https://t.me/${channelId.replace('@', '')})` : ''),
       );
-      return;
     }
 
     const user = ctx.user;
+    // Fetch most-relevant subscription for dynamic panel
+    const sub  = await SubscriptionRepository.findActiveByOwner(user._id)
+               ?? await SubscriptionRepository.findOne({ ownerId: user._id, status: 'on_hold' })
+               ?? await SubscriptionRepository.findOne({ ownerId: user._id }, { sort: { createdAt: -1 } });
+
     const welcomeLines = [
       '🔹 *HORNET*',
       '',
@@ -76,38 +126,41 @@ async function startCommand(ctx) {
       'لطفاً یکی از گزینه‌های زیر را انتخاب کنید:',
     ];
 
-    await ctx.replyWithMarkdown(welcomeLines.join('\n'), mainMenuKeyboard);
+    await ctx.replyWithMarkdown(welcomeLines.join('\n'), generateUserPanel(user, sub));
   } catch (error) {
     await ctx.reply(formatError(error));
   }
 }
 
-async function showMainMenu(ctx, prefix) {
-  const text = prefix
-    ? `${prefix}\n\n🔹 *HORNET*\n\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:`
-    : '🔹 *HORNET*\n\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:';
+// ─── Main menu ────────────────────────────────────────────────────────────────
 
-  if (ctx.callbackQuery?.message) {
-    try {
-      await safeEdit(ctx, text, { parse_mode: 'Markdown', ...mainMenuKeyboard });
+export async function handleMainMenu(ctx) {
+  try {
+    const user = ctx.user || await UserService.resolveUser(ctx.from.id);
+    const sub  = await SubscriptionRepository.findActiveByOwner(user._id)
+               ?? await SubscriptionRepository.findOne({ ownerId: user._id, status: 'on_hold' });
+
+    const text = '🔹 *HORNET*\n\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:';
+    const kb   = generateUserPanel(user, sub);
+
+    if (ctx.callbackQuery?.message) {
+      await safeEdit(ctx, text, { parse_mode: 'Markdown', ...kb });
       await ctx.answerCbQuery();
-    } catch {
-      await ctx.replyWithMarkdown(text, mainMenuKeyboard);
+    } else {
+      await ctx.replyWithMarkdown(text, kb);
     }
-  } else {
-    await ctx.replyWithMarkdown(text, mainMenuKeyboard);
+  } catch (error) {
+    await ctx.reply(formatError(error));
   }
 }
 
-async function handleMainMenu(ctx) {
-  await showMainMenu(ctx);
-}
+// ─── Profile ──────────────────────────────────────────────────────────────────
 
-async function handleProfile(ctx) {
+export async function handleProfile(ctx) {
   try {
-    const user = ctx.user || await UserService.resolveUser(ctx.from.id);
+    const user       = ctx.user || await UserService.resolveUser(ctx.from.id);
     const activeCount = await SubscriptionRepository.countByOwnerAndStatus(user._id, 'active');
-    const totalSpent = user.totalSpent || 0;
+    const holdCount   = await SubscriptionRepository.countByOwnerAndStatus(user._id, 'on_hold');
 
     const lines = [
       '📊 *وضعیت حساب کاربری*',
@@ -115,12 +168,13 @@ async function handleProfile(ctx) {
       `🆔 شناسه: \`${user.telegramId}\``,
       `📊 سطح: ${user.rank || 'کاربر'}`,
       `💰 اعتبار: ${formatRials(user.walletBalance)}`,
-      `💸 مجموع هزینه: ${formatRials(totalSpent)}`,
+      `💸 مجموع هزینه: ${formatRials(user.totalSpent || 0)}`,
       `📡 اشتراک فعال: ${activeCount}`,
+      holdCount > 0 ? `⏳ در انتظار اتصال: ${holdCount}` : '',
       `🔗 کد معرف: \`${user.referralCode || '—'}\``,
       '',
       '🔹 HORNET',
-    ];
+    ].filter(Boolean);
 
     if (ctx.callbackQuery?.message) {
       await safeEdit(ctx, lines.join('\n'), {
@@ -130,15 +184,17 @@ async function handleProfile(ctx) {
     } else {
       await ctx.replyWithMarkdown(lines.join('\n'), mainMenuKeyboard);
     }
+    await ctx.answerCbQuery?.();
   } catch (error) {
     await ctx.reply(formatError(error));
   }
 }
 
-async function handleBuyRenew(ctx) {
+// ─── Buy / Renew ──────────────────────────────────────────────────────────────
+
+export async function handleBuyRenew(ctx) {
   try {
     const categories = await PlanService.getCategories();
-
     if (!categories || categories.length === 0) {
       await safeEdit(ctx, '❌ در حال حاضر هیچ طرحی موجود نیست.', {
         parse_mode: 'Markdown',
@@ -148,19 +204,11 @@ async function handleBuyRenew(ctx) {
     }
 
     const keyboard = Markup.inlineKeyboard([
-      ...categories.map(cat => [
-        Markup.button.callback(cat, `category_${cat}`),
-      ]),
+      ...categories.map(cat => [Markup.button.callback(cat, `category_${cat}`)]),
       [Markup.button.callback('🔙 بازگشت', 'main_menu')],
     ]);
 
-    const lines = [
-      '⚡ *خرید اشتراک*',
-      '',
-      'لطفاً دسته‌بندی طرح مورد نظر خود را انتخاب کنید:',
-    ];
-
-    await safeEdit(ctx, lines.join('\n'), {
+    await safeEdit(ctx, '⚡ *خرید اشتراک*\n\nدسته‌بندی مورد نظر را انتخاب کنید:', {
       parse_mode: 'Markdown',
       ...keyboard,
     });
@@ -170,39 +218,25 @@ async function handleBuyRenew(ctx) {
   }
 }
 
-async function handleCategorySelection(ctx) {
+export async function handleCategorySelection(ctx) {
   try {
     const category = ctx.match[1];
-    const plans = await PlanService.getPlansByCategory(category);
+    const plans    = await PlanService.getPlansByCategory(category);
 
     if (!plans || plans.length === 0) {
       await safeEdit(ctx, `❌ هیچ طرحی در دسته "${category}" یافت نشد.`, {
         parse_mode: 'Markdown',
         reply_markup: Markup.inlineKeyboard([
-          [Markup.button.callback('🔙 بازگشت به دسته‌بندی', 'buy_renew')],
+          [Markup.button.callback('🔙 بازگشت', 'buy_renew')],
         ]).reply_markup,
       });
       return;
     }
 
-    const keyboardRows = plans.map(plan => [
-      Markup.button.callback(
-        `${plan.title} - ${formatRials(plan.basePrice)}`,
-        `select_plan_${plan._id}`,
-      ),
-    ]);
-
-    keyboardRows.push([Markup.button.callback('🔙 بازگشت', 'buy_renew')]);
-
-    const lines = [
-      `📁 *دسته: ${category}*`,
-      '',
-      'طرح مورد نظر خود را انتخاب کنید:',
-    ];
-
-    await safeEdit(ctx, lines.join('\n'), {
+    const keyboard = generatePlansKeyboard(plans, formatRials);
+    await safeEdit(ctx, `📁 *دسته: ${category}*\n\nطرح مورد نظر را انتخاب کنید:`, {
       parse_mode: 'Markdown',
-      reply_markup: Markup.inlineKeyboard(keyboardRows).reply_markup,
+      ...keyboard,
     });
     await ctx.answerCbQuery();
   } catch (error) {
@@ -210,72 +244,175 @@ async function handleCategorySelection(ctx) {
   }
 }
 
-async function handleMySubscriptions(ctx) {
+// ─── My subscriptions ─────────────────────────────────────────────────────────
+
+export async function handleMySubscriptions(ctx) {
   try {
     const user = ctx.user || await UserService.resolveUser(ctx.from.id);
     const subs = await SubscriptionRepository.findByOwner(user._id);
 
     if (!subs || subs.length === 0) {
-      const lines = [
-        '📋 *اشتراک‌های من*',
-        '',
-        'شما هیچ اشتراک فعالی ندارید.',
-        'از گزینه "خرید اشتراک" یک طرح انتخاب کنید.',
-      ];
-      await safeEdit(ctx, lines.join('\n'), {
+      const text = '📋 *اشتراک‌های من*\n\nشما هیچ اشتراکی ندارید.\nاز گزینه "خرید اشتراک" یک طرح انتخاب کنید.';
+      await safeEdit(ctx, text, {
         parse_mode: 'Markdown',
         reply_markup: mainMenuKeyboard.reply_markup,
       });
       return;
     }
 
-    const lines = ['📋 *اشتراک‌های من*', ''];
-    const populatedSubs = await Subscription.find({
-      _id: { $in: subs.map(s => s._id) },
-    }).populate('planId').populate('serverId');
+    const lines        = ['📋 *اشتراک‌های من*', ''];
+    const populatedSubs = await Subscription.find({ _id: { $in: subs.map(s => s._id) } })
+      .populate('planId')
+      .populate('serverId');
+
+    // Pick the "best" subscription for the dynamic panel
+    const activeSub = populatedSubs.find(s => s.status === 'active')
+                   ?? populatedSubs.find(s => s.status === 'on_hold')
+                   ?? populatedSubs[0];
 
     for (const sub of populatedSubs) {
       lines.push('─'.repeat(15));
       lines.push(await getSubscriptionSummary(sub, sub.planId, sub.serverId));
     }
+    lines.push('', '🔹 HORNET');
 
-    lines.push('');
-    lines.push('🔹 HORNET');
+    const kb = activeSub
+      ? subscriptionActionsKeyboard()
+      : mainMenuKeyboard;
 
     if (ctx.callbackQuery?.message) {
-      await safeEdit(ctx, lines.join('\n'), {
-        parse_mode: 'Markdown',
-        ...subscriptionActionsKeyboard(),
-      });
+      await safeEdit(ctx, lines.join('\n'), { parse_mode: 'Markdown', ...kb });
     } else {
-      await ctx.replyWithMarkdown(lines.join('\n'), subscriptionActionsKeyboard());
+      await ctx.replyWithMarkdown(lines.join('\n'), kb);
     }
+    await ctx.answerCbQuery?.();
   } catch (error) {
     await ctx.reply(formatError(error));
   }
 }
 
-async function handleCreateSubLink(ctx) {
+// ─── Create sub-link ──────────────────────────────────────────────────────────
+
+export async function handleCreateSubLink(ctx) {
   try {
     const user = ctx.user || await UserService.resolveUser(ctx.from.id);
-    const sub = await SubscriptionRepository.findActiveByOwner(user._id);
-
+    const sub  = await SubscriptionRepository.findActiveByOwner(user._id);
     if (!sub) {
-      await ctx.reply('❌ اشتراک فعالی ندارید. لطفاً ابتدا یک طرح خریداری کنید.');
+      await ctx.answerCbQuery('❌ اشتراک فعالی ندارید.', { show_alert: true });
       return;
     }
-
     return ctx.scene.enter('create-sublink');
   } catch (error) {
     await ctx.reply(formatError(error));
   }
 }
 
-async function handlePlanSelection(ctx) {
+// ─── Get Config — client picker step 1 ───────────────────────────────────────
+
+/**
+ * Step 1: user taps "دریافت پیکربندی" → show client-type picker.
+ */
+export async function handleGetConfig(ctx) {
+  try {
+    const user = ctx.user || await UserService.resolveUser(ctx.from.id);
+    const sub  = await SubscriptionRepository.findActiveByOwner(user._id);
+
+    if (!sub) {
+      await ctx.answerCbQuery('❌ اشتراک فعالی ندارید.', { show_alert: true });
+      return;
+    }
+
+    // Find the first active tunnel config (sub-link)
+    const tunnelConfig = await TunnelConfigRepository.findOne({
+      subscriptionId: sub._id,
+      isActive: true,
+    });
+
+    if (!tunnelConfig) {
+      await ctx.answerCbQuery('❌ ابتدا یک لینک بسازید.', { show_alert: true });
+      return;
+    }
+
+    await safeEdit(
+      ctx,
+      '📱 *انتخاب نرم‌افزار*\n\nبرای دریافت پیکربندی، نرم‌افزار VPN خود را انتخاب کنید:',
+      {
+        parse_mode: 'Markdown',
+        ...generateClientPickerKeyboard(tunnelConfig.uuid),
+      },
+    );
+    await ctx.answerCbQuery();
+  } catch (error) {
+    await ctx.reply(formatError(error));
+  }
+}
+
+/**
+ * Step 2: user picks a client → deliver config in the correct format.
+ * Action pattern: config_client_<clientKey>_<uuid>
+ *
+ * clientKey → User-Agent string passed to SmartSubscriptionService:
+ *   v2rayng   → '' (Base64 fallback)
+ *   singbox   → 'sing-box/1.0'
+ *   clash     → 'ClashX/1.0'
+ *   clashmeta → 'Clash Meta/1.0'
+ */
+export async function handleConfigClientPick(ctx) {
+  try {
+    // match[1] = clientKey, match[2] = uuid
+    const clientKey = ctx.match[1];
+    const uuid      = ctx.match[2];
+
+    const UA_MAP = {
+      v2rayng:   '',
+      singbox:   'sing-box/1.0',
+      clash:     'ClashX/1.0',
+      clashmeta: 'Clash Meta/1.0',
+    };
+
+    const userAgent = UA_MAP[clientKey] ?? '';
+    const result    = await SmartSubscriptionService.render(uuid, userAgent);
+
+    if (!result) {
+      await ctx.answerCbQuery('❌ پیکربندی یافت نشد.', { show_alert: true });
+      return;
+    }
+
+    await ctx.answerCbQuery();
+
+    // Send the config as a file so users can import it directly
+    const clientNames = {
+      v2rayng:   'V2RayNG',
+      singbox:   'Sing-Box',
+      clash:     'Clash',
+      clashmeta: 'Clash Meta',
+    };
+
+    const clientName = clientNames[clientKey] || 'VPN';
+    const fileName   = `hornet-${clientKey}-${uuid.slice(0, 8)}.${result.format === 'clash' ? 'yaml' : result.format === 'singbox' ? 'json' : 'txt'}`;
+
+    await ctx.replyWithDocument(
+      {
+        source: Buffer.from(result.body, 'utf-8'),
+        filename: fileName,
+      },
+      {
+        caption: `⚡ *پیکربندی ${clientName}*\n\n📥 فایل را دانلود کنید و به ${clientName} وارد کنید.`,
+        parse_mode: 'Markdown',
+        ...mainMenuKeyboard,
+      },
+    );
+  } catch (error) {
+    await ctx.reply(formatError(error));
+  }
+}
+
+// ─── Plan selection & checkout ────────────────────────────────────────────────
+
+export async function handlePlanSelection(ctx) {
   try {
     const planId = ctx.match[1];
-    const plan = await PlanService.getPlanById(planId);
-
+    const plan   = await PlanService.getPlanById(planId);
     if (!plan) {
       await safeEdit(ctx, '❌ طرح مورد نظر یافت نشد.', {
         parse_mode: 'Markdown',
@@ -285,11 +422,12 @@ async function handlePlanSelection(ctx) {
     }
 
     const vol = plan.baseVolumeGB > 0 ? `${plan.baseVolumeGB} GB` : '♾ نامحدود';
-    const dur = plan.durationDays >= 30 ? `${Math.floor(plan.durationDays / 30)} ماه` : `${plan.durationDays} روز`;
+    const dur = plan.durationDays >= 30
+      ? `${Math.floor(plan.durationDays / 30)} ماه`
+      : `${plan.durationDays} روز`;
 
     const lines = [
-      `📦 *${plan.title}*`,
-      '',
+      `📦 *${plan.title}*`, '',
       `📁 دسته: ${plan.category}`,
       `💾 حجم: ${vol}`,
       `📅 مدت: ${dur}`,
@@ -299,14 +437,12 @@ async function handlePlanSelection(ctx) {
       'آیا مایل به ادامه هستید؟',
     ];
 
-    const kb = Markup.inlineKeyboard([
-      [Markup.button.callback('✅ ادامه به پرداخت', `checkout_${plan._id}`)],
-      [Markup.button.callback('🔙 بازگشت', 'buy_renew')],
-    ]);
-
     await safeEdit(ctx, lines.join('\n'), {
       parse_mode: 'Markdown',
-      ...kb,
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('✅ ادامه به پرداخت', `checkout_${plan._id}`)],
+        [Markup.button.callback('🔙 بازگشت',          'buy_renew')],
+      ]),
     });
     await ctx.answerCbQuery();
   } catch (error) {
@@ -314,75 +450,11 @@ async function handlePlanSelection(ctx) {
   }
 }
 
-async function handleCardPayment(ctx) {
+export async function handleCheckout(ctx) {
   try {
     const planId = ctx.match[1];
-    const plan = await PlanService.getPlanById(planId);
-
-    if (!plan) {
-      await ctx.reply('❌ طرح مورد نظر یافت نشد.');
-      return;
-    }
-
-    ctx.session = ctx.session || {};
-    ctx.session.pendingPayment = { planId: plan._id.toString(), amount: plan.basePrice };
-
-    return ctx.scene.enter('receipt-upload');
-  } catch (error) {
-    await ctx.reply(formatError(error));
-  }
-}
-
-async function handleAutoCardPayment(ctx) {
-  try {
-    const planId = ctx.match[1];
-    const user = ctx.user || await UserService.resolveUser(ctx.from.id);
-    const plan = await PlanService.getPlanById(planId);
-
-    if (!plan) {
-      await ctx.reply('❌ طرح مورد نظر یافت نشد.');
-      return;
-    }
-
-    const cardNumber = await SettingRepository.get('cardNumber', '5022-2910-XXXX-XXXX');
-    const uniqueAmount = await PaymentService.generateUniqueAmount(plan.basePrice);
-    if (!uniqueAmount) {
-      await ctx.reply('❌ امکان تولید مبلغ یکتا وجود ندارد. لطفاً مجدداً تلاش کنید.');
-      return;
-    }
-
-    await PaymentService.submitReceipt(user._id, plan._id, uniqueAmount, 'auto_photo_id');
-
-    const lines = [
-      '💰 *پرداخت کارت به کارت*',
-      '',
-      `💳 شماره کارت: \`${cardNumber}\``,
-      `💰 مبلغ دقیق: ${formatRials(uniqueAmount)}`,
-      '',
-      '📋 مبلغ دقیق را به شماره کارت واریز کنید.',
-      'رسید به صورت خودکار از طریق پیامک بانک تأیید می‌شود.',
-      '',
-      '⚠️ در صورت عدم تأیید خودکار، رسید را به صورت دستی آپلود کنید:',
-    ];
-
-    const kb = Markup.inlineKeyboard([
-      [Markup.button.callback('📎 آپلود رسید', `cardpay_${plan._id}`)],
-      [Markup.button.callback('🔙 بازگشت', 'buy_renew')],
-    ]);
-
-    await ctx.replyWithMarkdown(lines.join('\n'), kb);
-    await ctx.replyWithMarkdown('🔹 *HORNET*', mainMenuKeyboard);
-  } catch (error) {
-    await ctx.reply(formatError(error));
-  }
-}
-
-async function handleCheckout(ctx) {
-  try {
-    const planId = ctx.match[1];
-    const user = ctx.user || await UserService.resolveUser(ctx.from.id);
-    const plan = await PlanService.getPlanById(planId);
-
+    const user   = ctx.user || await UserService.resolveUser(ctx.from.id);
+    const plan   = await PlanService.getPlanById(planId);
     if (!plan) {
       await safeEdit(ctx, '❌ طرح مورد نظر یافت نشد.', {
         parse_mode: 'Markdown',
@@ -392,50 +464,45 @@ async function handleCheckout(ctx) {
     }
 
     const balance = user.walletBalance;
-    const price = plan.basePrice;
-    const lines = [
-      '🧾 *تسویه حساب*',
-      '',
+    const price   = plan.basePrice;
+    const lines   = [
+      '🧾 *تسویه حساب*', '',
       `📦 طرح: ${plan.title}`,
       `💰 مبلغ: ${formatRials(price)}`,
       `💳 اعتبار: ${formatRials(balance)}`,
       '',
     ];
-    const backBtn = [Markup.button.callback('🔙 بازگشت', 'buy_renew')];
 
+    let kb;
     if (balance >= price) {
-      lines.push('✅ موجودی کافی است.');
-      lines.push('آیا از کیف پول پرداخت می‌کنید؟');
-      const kb = Markup.inlineKeyboard([
-        [Markup.button.callback('💳 پرداخت از اعتبار', `checkout_confirm_${plan._id}`)],
-        [Markup.button.callback('🏦 کارت به کارت', `cardpay_${plan._id}`)],
-        [Markup.button.callback('🔙 لغو', 'buy_renew')],
+      lines.push('✅ موجودی کافی است. روش پرداخت را انتخاب کنید:');
+      kb = Markup.inlineKeyboard([
+        [Markup.button.callback('💳 پرداخت از اعتبار',  `checkout_confirm_${plan._id}`)],
+        [Markup.button.callback('🏦 کارت به کارت',      `cardpay_${plan._id}`)],
+        [Markup.button.callback('🔙 لغو',               'buy_renew')],
       ]);
-      await safeEdit(ctx, lines.join('\n'), { parse_mode: 'Markdown', ...kb });
     } else {
-      lines.push('❌ اعتبار کافی ندارید.');
-      lines.push(`💰 ${formatRials(price - balance)} کسر اعتبار دارید.`);
-      lines.push('لطفاً از طریق کارت به کارت پرداخت کنید:');
-      const kb = Markup.inlineKeyboard([
+      lines.push(`❌ اعتبار کافی ندارید. کسری: ${formatRials(price - balance)}`);
+      kb = Markup.inlineKeyboard([
         [Markup.button.callback('🏦 کارت به کارت', `cardpay_${plan._id}`)],
-        backBtn,
+        [Markup.button.callback('🔙 لغو',          'buy_renew')],
       ]);
-      await safeEdit(ctx, lines.join('\n'), { parse_mode: 'Markdown', ...kb });
     }
+
+    await safeEdit(ctx, lines.join('\n'), { parse_mode: 'Markdown', ...kb });
     await ctx.answerCbQuery();
   } catch (error) {
     await ctx.reply(formatError(error));
   }
 }
 
-async function handleCheckoutConfirm(ctx) {
+export async function handleCheckoutConfirm(ctx) {
   try {
     const planId = ctx.match[1];
-    const user = ctx.user || await UserService.resolveUser(ctx.from.id);
-    const plan = await PlanService.getPlanById(planId);
-
+    const user   = ctx.user || await UserService.resolveUser(ctx.from.id);
+    const plan   = await PlanService.getPlanById(planId);
     if (!plan) {
-      await safeEdit(ctx, '❌ طرح مورد نظر یافت نشد.', {
+      await safeEdit(ctx, '❌ طرح یافت نشد.', {
         parse_mode: 'Markdown',
         reply_markup: mainMenuKeyboard.reply_markup,
       });
@@ -445,42 +512,87 @@ async function handleCheckoutConfirm(ctx) {
     await SubscriptionService.createSubscription(user._id, plan._id);
 
     const vol = plan.baseVolumeGB > 0 ? `${plan.baseVolumeGB} GB` : '♾ نامحدود';
-    const dur = plan.durationDays >= 30 ? `${Math.floor(plan.durationDays / 30)} ماه` : `${plan.durationDays} روز`;
+    const dur = plan.durationDays >= 30
+      ? `${Math.floor(plan.durationDays / 30)} ماه`
+      : `${plan.durationDays} روز`;
 
-    const lines = [
-      '✅ *پرداخت با موفقیت انجام شد*',
-      '',
+    await safeEdit(ctx, [
+      '✅ *پرداخت با موفقیت انجام شد*', '',
       `📦 طرح: ${plan.title}`,
       `💾 حجم: ${vol}`,
       `📅 مدت: ${dur}`,
       `💰 مبلغ: ${formatRials(plan.basePrice)}`,
       '',
-      'اشتراک شما فعال شد. 🔹 HORNET',
-    ];
-
-    await safeEdit(ctx, lines.join('\n'), {
+      '⏳ اشتراک شما آماده است — تایمر پس از اولین اتصال شروع می‌شود.',
+      '🔹 HORNET',
+    ].join('\n'), {
       parse_mode: 'Markdown',
       reply_markup: mainMenuKeyboard.reply_markup,
     });
     await ctx.answerCbQuery();
   } catch (error) {
-    if (error?.name === 'InsufficientBalanceError' || error?.constructor?.name === 'InsufficientBalanceError') {
-      await safeEdit(ctx, '❌ اعتبار کافی ندارید.', {
-        parse_mode: 'Markdown',
-        reply_markup: mainMenuKeyboard.reply_markup,
-      });
-      return;
-    }
-    await safeEdit(ctx, `❌ خطا در پرداخت: ${error.message}`, {
+    const msg = error?.constructor?.name === 'InsufficientBalanceError'
+      ? '❌ اعتبار کافی ندارید.'
+      : `❌ خطا در پرداخت: ${error.message}`;
+    await safeEdit(ctx, msg, {
       parse_mode: 'Markdown',
       reply_markup: mainMenuKeyboard.reply_markup,
     });
   }
 }
 
-async function handleFreeTrial(ctx) {
+// ─── Card payment ─────────────────────────────────────────────────────────────
+
+export async function handleCardPayment(ctx) {
   try {
-    const user = ctx.user || await UserService.resolveUser(ctx.from.id);
+    const planId = ctx.match[1];
+    const plan   = await PlanService.getPlanById(planId);
+    if (!plan) { await ctx.reply('❌ طرح یافت نشد.'); return; }
+    ctx.session = ctx.session || {};
+    ctx.session.pendingPayment = { planId: plan._id.toString(), amount: plan.basePrice };
+    return ctx.scene.enter('receipt-upload');
+  } catch (error) {
+    await ctx.reply(formatError(error));
+  }
+}
+
+export async function handleAutoCardPayment(ctx) {
+  try {
+    const planId = ctx.match[1];
+    const user   = ctx.user || await UserService.resolveUser(ctx.from.id);
+    const plan   = await PlanService.getPlanById(planId);
+    if (!plan) { await ctx.reply('❌ طرح یافت نشد.'); return; }
+
+    const cardNumber   = await SettingRepository.get('cardNumber', '5022-2910-XXXX-XXXX');
+    const uniqueAmount = await PaymentService.generateUniqueAmount(plan.basePrice);
+    if (!uniqueAmount) {
+      await ctx.reply('❌ امکان تولید مبلغ یکتا وجود ندارد. مجدداً تلاش کنید.');
+      return;
+    }
+
+    await PaymentService.submitReceipt(user._id, plan._id, uniqueAmount, 'auto_photo_id');
+
+    await ctx.replyWithMarkdown([
+      '💰 *پرداخت کارت به کارت*', '',
+      `💳 شماره کارت: \`${cardNumber}\``,
+      `💰 مبلغ دقیق: ${formatRials(uniqueAmount)}`,
+      '',
+      '📋 مبلغ دقیق را واریز کنید. تأیید از طریق پیامک بانک انجام می‌شود.',
+      '⚠️ در صورت عدم تأیید خودکار، رسید را آپلود کنید:',
+    ].join('\n'), Markup.inlineKeyboard([
+      [Markup.button.callback('📎 آپلود رسید', `cardpay_${plan._id}`)],
+      [Markup.button.callback('🔙 بازگشت',    'buy_renew')],
+    ]));
+  } catch (error) {
+    await ctx.reply(formatError(error));
+  }
+}
+
+// ─── Free trial ───────────────────────────────────────────────────────────────
+
+export async function handleFreeTrial(ctx) {
+  try {
+    const user      = ctx.user || await UserService.resolveUser(ctx.from.id);
     const trialPlan = await PlanService.getTrialPlan();
 
     if (!trialPlan) {
@@ -491,17 +603,10 @@ async function handleFreeTrial(ctx) {
       return;
     }
 
-    const usedTrial = await Subscription.findOne({
-      ownerId: user._id,
-      planId: trialPlan._id,
-    });
-
+    const usedTrial = await Subscription.findOne({ ownerId: user._id, planId: trialPlan._id });
     if (usedTrial) {
       await ctx.replyWithMarkdown(
-        '🎁 *طرح آزمایشی*\n\n' +
-        'شما قبلاً از طرح آزمایشی استفاده کرده‌اید.\n' +
-        'هر کاربر تنها یک بار می‌تواند از این طرح استفاده کند.\n\n' +
-        'برای خرید اشتراک از گزینه "خرید اشتراک" استفاده کنید.',
+        '🎁 *طرح آزمایشی*\n\nشما قبلاً از طرح آزمایشی استفاده کرده‌اید.\nبرای خرید از گزینه "خرید اشتراک" استفاده کنید.',
         mainMenuKeyboard,
       );
       return;
@@ -509,36 +614,16 @@ async function handleFreeTrial(ctx) {
 
     await SubscriptionService.forceCreateSubscription(user.telegramId, trialPlan._id);
 
-    await ctx.replyWithMarkdown(
-      '✅ *طرح آزمایشی فعال شد*\n\n' +
-      `طرح "${trialPlan.title}" با موفقیت فعال شد.\n` +
-      `📅 مدت: ${trialPlan.durationDays} روز\n` +
-      `💾 حجم: ${trialPlan.baseVolumeGB} GB\n\n` +
+    await ctx.replyWithMarkdown([
+      '✅ *طرح آزمایشی فعال شد*', '',
+      `طرح "${trialPlan.title}" آماده است.`,
+      `📅 مدت: ${trialPlan.durationDays} روز`,
+      `💾 حجم: ${trialPlan.baseVolumeGB} GB`,
+      '',
+      '⏳ تایمر اشتراک پس از اولین اتصال شروع می‌شود.',
       '🔹 HORNET',
-      mainMenuKeyboard,
-    );
+    ].join('\n'), mainMenuKeyboard);
   } catch (error) {
     await ctx.reply(formatError(error));
   }
 }
-
-export {
-  safeEdit,
-  checkChannelMembership,
-  getSubscriptionSummary,
-  startCommand,
-  showMainMenu,
-  handleMainMenu,
-  handleProfile,
-  handleBuyRenew,
-  handleCategorySelection,
-  handleMySubscriptions,
-  handleCreateSubLink,
-  handlePlanSelection,
-  handleCardPayment,
-  handleAutoCardPayment,
-  handleCheckout,
-  handleCheckoutConfirm,
-  // handleMockRecharge removed for security
-  handleFreeTrial,
-};
