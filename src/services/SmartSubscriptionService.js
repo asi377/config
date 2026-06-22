@@ -311,10 +311,20 @@ class SmartSubscriptionService {
 
     // 3. Load all healthy active servers
     const servers = await ServerRepository.findActive();
-    const healthyServers = servers.filter((s) => s.healthStatus !== 'unhealthy' && s.status === 'active');
+    let healthyServers = servers.filter((s) => s.healthStatus !== 'unhealthy' && s.status === 'active');
+
+    // 3a. Smart routing: filter servers based on plan type
+    const planTitle = sub?.planId?.title?.toLowerCase() || '';
+    if (planTitle === 'gaming') {
+      healthyServers = healthyServers.filter((s) => s.tags?.some((t) => t.toLowerCase() === 'gaming'));
+    } else if (planTitle === 'dedicated') {
+      healthyServers = healthyServers.filter(
+        (s) => s.isDedicated === true && s.dedicatedTo?.toString() === sub.ownerId.toString(),
+      );
+    }
 
     if (healthyServers.length === 0) {
-      logger.warn({ uuid }, '[smart-sub] No healthy servers available');
+      logger.warn({ uuid, planTitle }, '[smart-sub] No healthy servers available after plan filtering');
       return null;
     }
 

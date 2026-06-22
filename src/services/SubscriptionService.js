@@ -50,20 +50,30 @@ class SubscriptionService extends BaseService {
         const user = await UserRepository.findById(userId, { session });
         if (!user) throw new NotFoundError('User');
 
-        if (user.walletBalance < plan.basePrice) {
-          throw new InsufficientBalanceError(user.walletBalance, plan.basePrice);
+        const effectivePrice = user.isReseller
+          ? Math.round(plan.basePrice * 0.8)
+          : plan.basePrice;
+
+        if (user.walletBalance < effectivePrice) {
+          throw new InsufficientBalanceError(user.walletBalance, effectivePrice);
         }
 
-        user.walletBalance -= plan.basePrice;
-        user.totalSpent = (user.totalSpent || 0) + plan.basePrice;
+        user.walletBalance -= effectivePrice;
+        user.totalSpent = (user.totalSpent || 0) + effectivePrice;
         user.rank = calculateRank(user.totalSpent);
+
+        if (!user.isReseller && (user.walletBalance >= 1000000 || user.totalSpent >= 1000000)) {
+          user.isReseller = true;
+        }
+
         await user.save({ session });
 
         if (user.referredBy) {
           const referrer = await UserRepository.findById(user.referredBy, { session });
           if (referrer) {
-            const reward = Math.round(plan.basePrice * 0.1);
+            const reward = Math.round(effectivePrice * 0.15);
             referrer.walletBalance += reward;
+            referrer.referralCommission = (referrer.referralCommission || 0) + reward;
             await referrer.save({ session });
           }
         }
