@@ -26,11 +26,16 @@ export default class WalletGateway extends BaseGateway {
     const tx = await TransactionRepository.create({
       userId,
       type: 'payment',
-      category: planId ? 'subscription_purchase' : 'wallet_debit',
       amount,
       description: description || 'Wallet payment',
-      refId: planId || null,
-      status: 'completed',
+      balanceBefore: user.walletBalance + amount,
+      balanceAfter: user.walletBalance,
+      referenceType: planId ? 'subscription' : null,
+      referenceId: planId || null,
+      metadata: {
+        category: planId ? 'subscription_purchase' : 'wallet_debit',
+        paymentStatus: 'completed',
+      },
     });
 
     logger.info({ userId, amount, txId: tx._id }, '[wallet] Payment completed');
@@ -46,12 +51,13 @@ export default class WalletGateway extends BaseGateway {
   async verifyPayment(paymentId) {
     const tx = await TransactionRepository.findById(paymentId);
     if (!tx) throw new PaymentGatewayError('Transaction not found');
+    const paymentStatus = tx.metadata?.paymentStatus;
     return {
       gateway: 'wallet',
       paymentId: tx._id.toString(),
-      status: tx.status,
+      status: paymentStatus || 'unknown',
       amount: tx.amount,
-      verified: tx.status === 'completed',
+      verified: paymentStatus === 'completed',
     };
   }
 
@@ -69,11 +75,14 @@ export default class WalletGateway extends BaseGateway {
     const refundTx = await TransactionRepository.create({
       userId: tx.userId,
       type: 'refund',
-      category: 'wallet_refund',
       amount: refundAmount,
       description: `Refund for transaction ${paymentId}`,
-      refId: tx._id,
-      status: 'completed',
+      referenceType: 'refund',
+      referenceId: tx._id,
+      metadata: {
+        category: 'wallet_refund',
+        paymentStatus: 'completed',
+      },
     });
 
     logger.info({ userId: tx.userId, refundAmount, txId: refundTx._id }, '[wallet] Refund completed');

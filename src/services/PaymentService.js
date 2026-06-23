@@ -46,7 +46,8 @@ class PaymentService extends BaseService {
       }
     }
 
-    const paymentResult = await paymentGateway.createPayment(amount, 'irr', { userId, receiptId: receipt._id, planId }, gateway);
+    const currency = gateway === 'crypto' ? 'usd' : 'irr';
+    const paymentResult = await paymentGateway.createPayment(amount, currency, { userId, receiptId: receipt._id, planId }, gateway);
 
     receipt.status = 'pending_payment';
     receipt.gatewayPaymentId = paymentResult.paymentId || paymentResult.transactionId || paymentResult.orderId;

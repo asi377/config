@@ -116,6 +116,19 @@ router.get('/users/:id/transactions', requirePermission('payments.read'), async 
 // ==================== SERVERS ====================
 router.get('/servers', requirePermission('servers.read'), AdminServerController.getAllServers);
 router.post('/servers', requirePermission('servers.write'), AdminServerController.addServer);
+router.patch('/servers/:id', requirePermission('servers.write'), async (req, res, next) => {
+  try {
+    const Server = (await import('../models/Server.js')).default;
+    const allowed = ['tags', 'isDedicated', 'dedicatedTo', 'region', 'salesEnabled', 'maxCapacity', 'port', 'name'];
+    const updates = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    const server = await Server.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true });
+    if (!server) return res.status(404).json({ success: false, error: 'Server not found' });
+    res.json({ success: true, data: server });
+  } catch (err) { next(err); }
+});
 router.patch('/servers/:id/sales', requirePermission('servers.manage'), AdminServerController.toggleServerSales);
 router.post('/servers/:id/reboot', requirePermission('servers.manage'), AdminServerController.rebootServer);
 router.delete('/servers/:id', requirePermission('servers.delete'), async (req, res, next) => {
@@ -148,6 +161,34 @@ router.get('/finance/projection', requirePermission('analytics.view'), AdminFina
 // ==================== BOT ====================
 router.get('/bot/broadcast-targets', requirePermission('users.read'), AdminBotController.getBroadcastTargets);
 router.post('/bot/broadcast', requirePermission('users.write'), AdminBotController.sendBroadcast);
+
+// ==================== BOT CONFIG ====================
+router.get('/bot-config', requirePermission('settings.read'), async (req, res, next) => {
+  try {
+    const BotConfig = (await import('../models/BotConfig.js')).default;
+    const config = await BotConfig.getSingleton();
+    res.json({ success: true, data: config });
+  } catch (err) { next(err); }
+});
+
+router.put('/bot-config', requirePermission('settings.write'), async (req, res, next) => {
+  try {
+    const BotConfig = (await import('../models/BotConfig.js')).default;
+    const { welcomeText, smsBankRegex, cryptoPaymentEnabled, botMenus } = req.body;
+    const config = await BotConfig.getSingleton();
+    if (welcomeText !== undefined) config.welcomeText = welcomeText;
+    if (smsBankRegex !== undefined) config.smsBankRegex = smsBankRegex;
+    if (cryptoPaymentEnabled !== undefined) config.cryptoPaymentEnabled = cryptoPaymentEnabled;
+    if (botMenus !== undefined) config.botMenus = botMenus;
+    await config.save();
+    const AuditLogRepository = (await import('../repositories/AuditLogRepository.js')).default;
+    await AuditLogRepository.create({
+      adminId: req.adminId, action: 'bot-config.update', targetType: 'BotConfig', targetId: config._id,
+      newValue: { welcomeText, smsBankRegex, cryptoPaymentEnabled, botMenus: botMenus?.length },
+    });
+    res.json({ success: true, data: config });
+  } catch (err) { next(err); }
+});
 
 // ==================== BANDWIDTH ====================
 router.get('/bandwidth/scaling', requirePermission('servers.read'), AdminBandwidthController.getLoadScalingActions);

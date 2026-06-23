@@ -1,67 +1,80 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import {
-    LayoutDashboard, Server, DollarSign, Bot, Users, LogOut, Zap,
+  Bot,
+  Server,
+  Wallet,
+  LogOut,
+  Shield,
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext.jsx';
 
-const NAV = [
-    { to: '/dashboard', icon: LayoutDashboard, label: 'داشبورد' },
-    { to: '/servers', icon: Server, label: 'سرورها' },
-    { to: '/finance', icon: DollarSign, label: 'مالی' },
-    { to: '/bot-builder', icon: Bot, label: 'بات' },
-    { to: '/users', icon: Users, label: 'کاربران' },
+const navItems = [
+  { to: '/bot-builder', icon: Bot, label: 'Bot Builder' },
+  { to: '/server-fleet', icon: Server, label: 'Server Fleet' },
+  { to: '/finance', icon: Wallet, label: 'Finance' },
 ];
 
 export default function Layout() {
-    const { logout } = useAuth();
-    const navigate = useNavigate();
+  const { admin, logout } = useAuth();
+  const navigate = useNavigate();
 
-    const handleLogout = () => { logout(); navigate('/login'); };
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
 
-    return (
-        <div className="flex h-screen overflow-hidden bg-gray-950">
-            {/* Sidebar */}
-            <aside className="w-56 flex-shrink-0 flex flex-col bg-gray-900 border-l border-gray-800">
-                {/* Logo */}
-                <div className="flex items-center gap-2 px-5 py-5 border-b border-gray-800">
-                    <Zap className="text-brand-500" size={22} />
-                    <span className="text-lg font-bold text-white">HORNET</span>
-                </div>
-
-                {/* Nav */}
-                <nav className="flex-1 px-3 py-4 space-y-1">
-                    {NAV.map(({ to, icon: Icon, label }) => (
-                        <NavLink
-                            key={to} to={to}
-                            className={({ isActive }) =>
-                                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors
-                 ${isActive
-                                    ? 'bg-brand-600 text-white font-medium'
-                                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`
-                            }
-                        >
-                            <Icon size={18} />
-                            {label}
-                        </NavLink>
-                    ))}
-                </nav>
-
-                {/* Logout */}
-                <div className="px-3 py-4 border-t border-gray-800">
-                    <button
-                        onClick={handleLogout}
-                        className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:bg-red-900/30 hover:text-red-400 transition-colors"
-                    >
-                        <LogOut size={18} />
-                        خروج
-                    </button>
-                </div>
-            </aside>
-
-            {/* Main */}
-            <main className="flex-1 overflow-y-auto p-6">
-                <Outlet />
-            </main>
+  return (
+    <div className="flex h-screen bg-gray-950">
+      <aside className="w-64 flex-shrink-0 border-r border-gray-800 bg-gray-900 flex flex-col">
+        <div className="flex items-center gap-3 px-5 h-16 border-b border-gray-800">
+          <Shield className="w-6 h-6 text-primary-400" />
+          <span className="font-bold text-lg">Admin Panel</span>
         </div>
-    );
+
+        <nav className="flex-1 p-3 space-y-1">
+          {navItems.map(({ to, icon: Icon, label }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-primary-600/20 text-primary-400 border border-primary-600/30'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                }`
+              }
+            >
+              <Icon className="w-5 h-5" />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="p-3 border-t border-gray-800">
+          <div className="flex items-center gap-3 px-3 py-2">
+            <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center text-xs font-bold">
+              {admin?.displayName?.[0] || 'A'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{admin?.displayName || 'Admin'}</p>
+              <p className="text-xs text-gray-500 truncate">{admin?.email || ''}</p>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-400 hover:text-red-400 hover:bg-gray-800 w-full mt-1 transition-colors"
+          >
+            <LogOut className="w-5 h-5" />
+            Logout
+          </button>
+        </div>
+      </aside>
+
+      <main className="flex-1 overflow-auto">
+        <div className="p-6 max-w-7xl mx-auto">
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  );
 }

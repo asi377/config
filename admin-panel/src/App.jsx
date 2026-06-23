@@ -1,32 +1,35 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
-import Layout from './components/Layout.jsx';
-import LoginPage from './pages/LoginPage.jsx';
-import DashboardPage from './pages/DashboardPage.jsx';
-import ServersPage from './pages/ServersPage.jsx';
-import FinancePage from './pages/FinancePage.jsx';
-import BotBuilderPage from './pages/BotBuilderPage.jsx';
-import UsersPage from './pages/UsersPage.jsx';
+import { useAuth } from './contexts/AuthContext';
+import Login from './pages/Login';
+import Layout from './components/Layout';
+import BotBuilder from './pages/BotBuilder';
+import ServerFleet from './pages/ServerFleet';
+import Finance from './pages/Finance';
 
-function PrivateRoute({ children }) {
-    const { apiKey } = useAuth();
-    return apiKey ? children : <Navigate to="/login" replace />;
+function ProtectedRoute({ children }) {
+  const { token } = useAuth();
+  if (!token) return <Navigate to="/login" replace />;
+  return children;
 }
 
 export default function App() {
-    return (
-        <AuthProvider>
-            <Routes>
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-                    <Route index element={<Navigate to="/dashboard" replace />} />
-                    <Route path="dashboard" element={<DashboardPage />} />
-                    <Route path="servers" element={<ServersPage />} />
-                    <Route path="finance" element={<FinancePage />} />
-                    <Route path="bot-builder" element={<BotBuilderPage />} />
-                    <Route path="users" element={<UsersPage />} />
-                </Route>
-            </Routes>
-        </AuthProvider>
-    );
+  const { token } = useAuth();
+  return (
+    <Routes>
+      <Route path="/login" element={token ? <Navigate to="/" replace /> : <Login />} />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <Layout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="/bot-builder" replace />} />
+        <Route path="bot-builder" element={<BotBuilder />} />
+        <Route path="server-fleet" element={<ServerFleet />} />
+        <Route path="finance" element={<Finance />} />
+      </Route>
+    </Routes>
+  );
 }

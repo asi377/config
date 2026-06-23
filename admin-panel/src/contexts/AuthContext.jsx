@@ -1,45 +1,68 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { login as apiLogin } from '../api/endpoints.js';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-    const [token, setToken] = useState(() => localStorage.getItem('hornet_jwt'));
-    const [apiKey, setApiKey] = useState(() => localStorage.getItem('hornet_admin_key') || '');
-    const [loading, setLoading] = useState(false);
+  const [token, setToken] = useState(() => localStorage.getItem('admin_token'));
+  const [admin, setAdmin] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-    const login = async (username, password) => {
-        setLoading(true);
-        try {
-            const res = await apiLogin({ username, password });
-            const jwt = res?.data?.accessToken || res?.accessToken;
-            if (jwt) {
-                localStorage.setItem('hornet_jwt', jwt);
-                setToken(jwt);
-            }
-            return { ok: true };
-        } catch (err) {
-            return { ok: false, error: err.message };
-        } finally {
-            setLoading(false);
-        }
-    };
+  const fetchMe = useCallback(async () => {
+    if (!token) { setAdmin(null); setLoading(false); return; }
+    try {
+      const { default: api } = await import('../api/client');
+      const res = await api.get('/auth/me');
+      setAdmin(res.data.data);
+    } catch {
+      localStorage.removeItem('admin_token');
+      setToken(null);
+      setAdmin(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
 
-    const saveApiKey = (key) => {
-        localStorage.setItem('hornet_admin_key', key);
-        setApiKey(key);
-    };
+  useEffect(() => { fetchMe(); }, [fetchMe]);
 
-    const logout = () => {
-        localStorage.removeItem('hornet_jwt');
-        setToken(null);
-    };
+  const login = async (email, password) => {
+    const { default: api } = await import('../api/client');
+    const res = await api.post('/auth/login', { email, password });
+    const data = res.data.data;
+    if (data.tempToken) {
+      return { requires2fa: true, tempToken: data.tempToken };
+    }
+    localStorage.setItem('admin_token', data.accessToken);
+    setToken(data.accessToken);
+    return { requires2fa: false };
+  };
 
-    return (
-        <AuthContext.Provider value={{ token, apiKey, saveApiKey, login, logout, loading }}>
-            {children}
-        </AuthContext.Provider>
-    );
+  const verify2fa = async (tempToken, code) => {
+    const { default: api } = await import('../api/client');
+    const res = await api.post('/auth/verify-2fa', { tempToken, code });
+    const data = res.data.data;
+    localStorage.setItem('admin_token', data.accessToken);
+    setToken(data.accessToken);
+  };
+
+  const logout = async () => {
+    try {
+      const { default: api } = await import('../api/client');
+      await api.post('/auth/logout', {});
+    } catch { /* ignore */ }
+    localStorage.removeItem('admin_token');
+    setToken(null);
+    setAdmin(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ token, admin, loading, login, verify2fa, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
-export const useAuth = () => useContext(AuthContext);
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
+}

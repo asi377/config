@@ -37,6 +37,12 @@ class UserRepository extends BaseRepository {
     return this.findMany(filter, { limit: 50 });
   }
 
+  async getWalletBalance(userId) {
+    const user = await this.findById(userId);
+    if (!user) throw new Error('User not found');
+    return user.walletBalance;
+  }
+
   async incrementWalletBalance(userId, amount, session) {
     return this.model.findByIdAndUpdate(
       userId,

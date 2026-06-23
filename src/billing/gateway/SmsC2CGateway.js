@@ -36,14 +36,17 @@ export default class SmsC2CGateway extends BaseGateway {
         const transaction = await TransactionRepository.create({
           userId,
           type: 'payment',
-          category: 'sms_c2c_deposit',
           amount: uniqueAmount,
           currency,
           description: `Card-to-card deposit for ${amount.toLocaleString()} IRR (payment ID: ${randomSuffix})`,
           balanceBefore: user.walletBalance,
           balanceAfter: user.walletBalance,
-          metadata: { baseAmount: amount, randomSuffix, originalMetadata: metadata },
-          status: 'pending_sms_verification',
+          metadata: {
+            cryptomusStatus: 'pending_sms_verification',
+            baseAmount: amount,
+            randomSuffix,
+            originalMetadata: metadata,
+          },
         }, { session });
 
         logger.info({ userId, amount, uniqueAmount, transactionId: transaction._id }, '[sms-c2c] Pending transaction created');
@@ -120,7 +123,7 @@ export default class SmsC2CGateway extends BaseGateway {
         const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
         let transaction = await TransactionRepository.findOne({
           amount: extractedAmount,
-          status: 'pending_sms_verification',
+          'metadata.cryptomusStatus': 'pending_sms_verification',
           createdAt: { $gte: thirtyMinutesAgo },
         }, { session });
 
@@ -130,19 +133,15 @@ export default class SmsC2CGateway extends BaseGateway {
         const user = await UserRepository.findById(transaction.userId, { session });
         if (!user) throw new PaymentGatewayError('User not found');
 
-        // Update transaction status
-        transaction.status = 'sms_verified';
-        transaction.verifiedAt = new Date();
-        transaction.metadata.verifiedAt = transaction.verifiedAt;
+        // Update transaction status in metadata
+        transaction.metadata.cryptomusStatus = 'sms_verified';
+        transaction.metadata.verifiedAt = new Date();
+        transaction.balanceAfter = user.walletBalance + transaction.amount;
         await transaction.save({ session });
 
         // Add funds to user wallet
-        user.walletBalance += transaction.amount;
+        user.walletBalance = transaction.balanceAfter;
         await user.save({ session });
-
-        // Update transaction with final balance
-        transaction.balanceAfter = user.walletBalance;
-        await transaction.save({ session });
 
         logger.info({ transactionId: transaction._id, amount: transaction.amount, userId: transaction.userId }, '[sms-c2c] Payment verified and funds added');
 

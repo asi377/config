@@ -42,7 +42,7 @@ class SubscriptionEngine {
           const payment = await paymentGateway.createPayment(
             plan.basePrice,
             'irr',
-            { userId, planId, description: `Purchase ${plan.name}` },
+            { userId, planId, description: `Purchase ${plan.title}` },
             gateway,
           );
 
@@ -62,17 +62,22 @@ class SubscriptionEngine {
           await TransactionRepository.create({
             userId,
             type: 'payment',
-            category: 'subscription_purchase',
             amount: plan.basePrice,
-            description: `Purchase: ${plan.name}`,
-            refId: sub._id,
-            status: payment.status,
-            gateway: payment.gateway,
-            gatewayPaymentId: payment.paymentId,
+            description: `Purchase: ${plan.title}`,
+            balanceBefore: user.walletBalance,
+            balanceAfter: user.walletBalance,
+            referenceType: 'subscription',
+            referenceId: sub._id,
+            metadata: {
+              category: 'subscription_purchase',
+              gateway: payment.gateway,
+              gatewayPaymentId: payment.paymentId,
+              paymentStatus: payment.status,
+            },
           }, { session });
 
           if (payment.status === 'completed') {
-            EventBus.emit('subscription:created', { userId, subscriptionId: sub._id, planName: plan.name });
+            EventBus.emit('subscription:created', { userId, subscriptionId: sub._id, planName: plan.title });
           }
 
           return { subscription: sub, payment };
@@ -89,7 +94,7 @@ class SubscriptionEngine {
           activatedAt: null,
         }, { session });
 
-        EventBus.emit('subscription:created', { userId, subscriptionId: sub._id, planName: plan.name });
+        EventBus.emit('subscription:created', { userId, subscriptionId: sub._id, planName: plan.title });
         return { subscription: sub, payment: null };
       });
     } finally {
@@ -119,7 +124,7 @@ class SubscriptionEngine {
           const payment = await paymentGateway.createPayment(
             plan.basePrice,
             'irr',
-            { userId: sub.ownerId, planId: plan._id, description: `Renewal: ${plan.name}` },
+            { userId: sub.ownerId, planId: plan._id, description: `Renewal: ${plan.title}` },
             gateway,
           );
 
@@ -135,16 +140,21 @@ class SubscriptionEngine {
           await TransactionRepository.create({
             userId: sub.ownerId,
             type: 'payment',
-            category: 'subscription_renewal',
             amount: plan.basePrice,
-            description: `Renewal: ${plan.name}`,
-            refId: sub._id,
-            status: payment.status,
-            gateway: payment.gateway,
-            gatewayPaymentId: payment.paymentId,
+            description: `Renewal: ${plan.title}`,
+            balanceBefore: user.walletBalance,
+            balanceAfter: user.walletBalance,
+            referenceType: 'subscription',
+            referenceId: sub._id,
+            metadata: {
+              category: 'subscription_renewal',
+              gateway: payment.gateway,
+              gatewayPaymentId: payment.paymentId,
+              paymentStatus: payment.status,
+            },
           }, { session });
 
-          EventBus.emit('subscription:renewed', { subscriptionId: sub._id, userId: sub.ownerId, planName: plan.name });
+          EventBus.emit('subscription:renewed', { subscriptionId: sub._id, userId: sub.ownerId, planName: plan.title });
           return { subscription: sub, payment };
         }
 
@@ -183,7 +193,6 @@ class SubscriptionEngine {
     sub.suspendReason = reason;
     await sub.save();
 
-    // Deactivate tunnel configs
     const { default: TunnelConfigRepository } = await import('../../repositories/TunnelConfigRepository.js');
     await TunnelConfigRepository.updateMany(
       { subscriptionId: sub._id, isActive: true },
@@ -260,7 +269,7 @@ class SubscriptionEngine {
     return {
       id: sub._id,
       status: sub.status,
-      plan: sub.planId?.name,
+      plan: sub.planId?.title,
       daysUntilExpiry,
       usagePercent: Number(usagePercent.toFixed(1)),
       allowedActions: allowedTransitions[sub.status] || [],

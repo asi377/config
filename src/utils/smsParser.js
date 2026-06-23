@@ -34,9 +34,9 @@ function extractAmountWithRegex(smsText, regexString) {
       const amount = parseInt(cleaned, 10);
       if (!isNaN(amount) && amount > 0) return amount;
     }
-    } catch {
-      // Invalid regex, fall back to default patterns
-    }
+  } catch {
+    // Invalid regex, fall back to default patterns
+  }
   return null;
 }
 
@@ -68,7 +68,7 @@ export const handleSmsWebhook = async (req, res) => {
       const result = await session.withTransaction(async () => {
         const transaction = await Transaction.findOne({
           amount: extractedAmount,
-          status: 'pending_sms_verification',
+          'metadata.cryptomusStatus': 'pending_sms_verification',
           createdAt: { $gte: thirtyMinutesAgo },
         }).session(session);
 

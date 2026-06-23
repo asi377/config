@@ -1,12 +1,12 @@
 import mongoose from 'mongoose';
 import crypto from 'crypto';
-import { Subscription, Plan, TunnelConfig, Server } from '../models/index.js';
+import { Subscription, TunnelConfig, Server } from '../src/models/index.js';
 import {
   NotFoundError,
   SubscriptionNotActiveError,
   MaxSubLinksReachedError,
   InsufficientQuotaError,
-} from '../utils/errors.js';
+} from '../src/shared/errors.js';
 
 class TunnelService {
   /**
