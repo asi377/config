@@ -27,6 +27,12 @@ const config = {
     accessExpiry: process.env.JWT_ACCESS_EXPIRY || '15m',
     refreshExpiry: process.env.JWT_REFRESH_EXPIRY || '7d',
   },
+  ws: {
+    agentPath: process.env.WS_AGENT_PATH || '/ws/agent',
+    commandTimeout: parseInt(process.env.WS_COMMAND_TIMEOUT || '30000', 10),
+    maxBufferSize: parseInt(process.env.WS_MAX_BUFFER_SIZE || '1048576', 10),
+  },
+  internalSubSecret: process.env.INTERNAL_SUB_SECRET,
   nodeSecret: process.env.NODE_SECRET || 'change-me-node-secret',
   redis: {
     url: process.env.REDIS_URL || 'redis://127.0.0.1:6379',

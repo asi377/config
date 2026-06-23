@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import config from '../config/index.js';
 import healthRoutes from './healthRoutes.js';
 import adminRoutes from './adminRoutes.js';
 import internalApiRoutes from './internalApiRoutes.js';
@@ -7,8 +8,20 @@ import adminPageRoutes from './adminPageRoutes.js';
 import authRoutes from './authRoutes.js';
 import nodeRoutes from './nodeRoutes.js';
 import subscriptionRoutes from './subscriptionRoutes.js';
+import InternalSubscriptionController from '../controllers/InternalSubscriptionController.js';
 
 const router = Router();
+
+// Cloudflare Worker access to raw subscription data — accepts X-API-Key or X-Sub-Secret
+function internalSubAuth(req, res, next) {
+  if (req.headers['x-api-key'] === config.adminApiKey) return next();
+  if (req.headers['x-sub-secret'] && req.headers['x-sub-secret'] === config.internalSubSecret) return next();
+  return res.status(401).json({ error: 'UNAUTHORIZED' });
+}
+
+router.get('/internal/sub/:token', internalSubAuth, (req, res, next) => {
+  InternalSubscriptionController.getRawSubscription(req, res, next);
+});
 
 router.use('/health', healthRoutes);
 router.use('/api/auth', authRoutes);

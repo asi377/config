@@ -18,6 +18,8 @@ import certManager from './crypto/CertManager.js';
 import paymentGateway from './billing/gateway/index.js';
 import { docsRoutes } from './docs/index.js';
 import DashboardSocket from './services/DashboardSocket.js';
+import wsServer from './services/ws/WSServer.js';
+import { startNodeCommandWorker } from './services/ws/NodeCommandBridge.js';
 
 export async function createApp(httpServer) {
   const app = express();
@@ -75,9 +77,10 @@ export async function createApp(httpServer) {
   // Main routes
   app.use(routes);
 
-  // Attach WebSocket to HTTP server
+  // Attach WebSocket servers to HTTP server
   if (httpServer) {
     DashboardSocket.attach(httpServer);
+    wsServer.attach(httpServer);
   }
 
   app.use(errorHandler);
@@ -119,6 +122,9 @@ export async function initializeDeps() {
     BullMQManager.recoverStalledJobs().catch(err => {
       logger.warn({ err }, '[app] Stall recovery check failed');
     });
+
+    // Start the websocket → agent command bridge worker
+    startNodeCommandWorker();
   }
   logger.info('[app] Job systems initialized');
 }

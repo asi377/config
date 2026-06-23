@@ -1,10 +1,15 @@
 import Subscription from '../models/Subscription.js';
 import TunnelConfig from '../models/TunnelConfig.js';
 import ServerRepository from '../repositories/ServerRepository.js';
+import UsageBuffer from '../services/UsageBuffer.js';
 import logger from '../config/logger.js';
 
 export async function expireStaleResources() {
   const now = new Date();
+
+  // Flush the Redis write-buffer before enforcing quotas so the
+  // $gte check sees the most recent byte counters.
+  await UsageBuffer.flushToMongo();
 
   try {
     // Only expire subscriptions that have actually been activated.
