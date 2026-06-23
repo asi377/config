@@ -10,8 +10,8 @@ const webhookLimiter = createRateLimiter({ windowMs: 60000, max: 60 });
 
 const router = Router();
 
-// SMS forwarder webhook - called by external SMS forwarder app, no JWT auth
-router.post('/sms-forwarder', webhookLimiter, handleSmsWebhook);
+// SMS forwarder webhook - called by external SMS forwarder app, no JWT auth but requires smsAuth
+router.post('/sms-forwarder', webhookLimiter, smsAuth, handleSmsWebhook);
 
 // SMS C2C webhook - legacy endpoint kept for backward compatibility
 router.post('/sms', webhookLimiter, smsAuth, (req, res) => {
@@ -35,8 +35,12 @@ router.post('/sms', webhookLimiter, smsAuth, (req, res) => {
 // SMS C2C webhook - updated endpoint using SmsC2CGateway
 router.post('/sms-v2', webhookLimiter, smsAuth, async (req, res) => {
   const smsText = req.body?.message || req.body?.text || '';
+  const userId = req.body?.userId;
   if (!smsText) {
     return res.status(400).json({ success: false, error: 'Missing message body' });
+  }
+  if (!userId) {
+    return res.status(400).json({ success: false, error: 'userId is required' });
   }
 
   try {
@@ -45,7 +49,7 @@ router.post('/sms-v2', webhookLimiter, smsAuth, async (req, res) => {
       return res.status(500).json({ success: false, error: 'Bot instance not available' });
     }
 
-    const result = await PaymentService.processSmsC2CWebhook(smsText, bot);
+    const result = await PaymentService.processSmsC2CWebhook(smsText, userId, bot);
     res.json({ success: true, data: result });
   } catch (err) {
     logger.error({ err }, '[sms-webhook-v2] processing error');

@@ -43,8 +43,12 @@ function extractAmountWithRegex(smsText, regexString) {
 export const handleSmsWebhook = async (req, res) => {
   try {
     const smsText = req.body?.message || req.body?.text || req.body?.body || '';
+    const userId = req.body?.userId;
     if (!smsText) {
       return res.status(400).json({ success: false, error: 'Missing SMS text in request body' });
+    }
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'userId is required' });
     }
 
     const botConfig = await BotConfig.getSingleton();
@@ -66,37 +70,51 @@ export const handleSmsWebhook = async (req, res) => {
     const session = await mongoose.startSession();
     try {
       const result = await session.withTransaction(async () => {
-        const transaction = await Transaction.findOne({
-          amount: extractedAmount,
-          'metadata.cryptomusStatus': 'pending_sms_verification',
-          createdAt: { $gte: thirtyMinutesAgo },
-        }).session(session);
+        // Atomically claim the matching transaction — userId + amount ensures deterministic ownership
+        const updated = await Transaction.findOneAndUpdate(
+          {
+            userId,
+            amount: extractedAmount,
+            'metadata.cryptomusStatus': 'pending_sms_verification',
+            status: 'pending',
+            createdAt: { $gte: thirtyMinutesAgo },
+          },
+          {
+            $set: {
+              status: 'completed',
+              'metadata.cryptomusStatus': 'sms_verified',
+              'metadata.verifiedAt': new Date(),
+            },
+          },
+          { new: true, session },
+        );
 
-        if (!transaction) {
+        if (!updated) {
           throw new Error('No matching pending transaction found');
         }
 
-        const user = await User.findById(transaction.userId).session(session);
+        const user = await User.findById(userId).session(session);
         if (!user) {
           throw new Error('User not found');
         }
 
-        transaction.status = 'PAID';
-        transaction.verifiedAt = new Date();
-        await transaction.save({ session });
-
-        user.walletBalance += transaction.amount;
+        const newBalance = user.walletBalance + updated.amount;
+        user.walletBalance = newBalance;
         await user.save({ session });
 
-        transaction.balanceAfter = user.walletBalance;
-        await transaction.save({ session });
+        // Record final balance on the transaction
+        await Transaction.updateOne(
+          { _id: updated._id },
+          { $set: { balanceAfter: newBalance } },
+          { session },
+        );
 
         return {
           success: true,
-          transactionId: transaction._id,
-          userId: user._id,
-          amount: transaction.amount,
-          newBalance: user.walletBalance,
+          transactionId: updated._id,
+          userId,
+          amount: updated.amount,
+          newBalance,
         };
       });
 

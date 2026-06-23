@@ -91,66 +91,81 @@ export default class SmsC2CGateway extends BaseGateway {
   async handleWebhook(payload, _headers) {
     if (!this.initialized) await this.initialize();
 
+    const smsText = payload.text || payload.message || payload.body;
+    const userId = payload.userId;
+    if (!smsText) throw new PaymentGatewayError('No SMS text provided in webhook payload');
+    if (!userId) throw new PaymentGatewayError('userId is required in webhook payload');
+
+    // Extract amount from SMS text using bank patterns
+    const BANK_PATTERNS = [
+      /انتقال:([\d,]+)\+/,
+      /انتقالي:([\d,]+)\+/,
+      /مبلغ:?\s*([\d,]+)\s*ریال/,
+      /مبلغ:?\s*([\d,]+)/,
+      /(\d{4,})\s*ریال/,
+    ];
+
+    let extractedAmount = null;
+    for (const pattern of BANK_PATTERNS) {
+      const match = smsText.match(pattern);
+      if (match) {
+        const cleaned = match[1].replace(/,/g, '').trim();
+        extractedAmount = parseInt(cleaned, 10);
+        if (!isNaN(extractedAmount) && extractedAmount > 0) break;
+      }
+    }
+    if (!extractedAmount) throw new PaymentGatewayError('Could not extract amount from SMS');
+
+    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+
     const session = await mongoose.startSession();
     try {
       const result = await session.withTransaction(async () => {
-        // SmsParser webhook endpoint receives SMS text in payload.text
-        const smsText = payload.text || payload.message || payload.body;
-        if (!smsText) throw new PaymentGatewayError('No SMS text provided in webhook payload');
+        // Atomic: match by userId + amount AND transition only if still pending
+        const updated = await TransactionRepository.model.findOneAndUpdate(
+          {
+            userId,
+            amount: extractedAmount,
+            'metadata.cryptomusStatus': 'pending_sms_verification',
+            status: 'pending',
+            createdAt: { $gte: thirtyMinutesAgo },
+          },
+          {
+            $set: {
+              status: 'completed',
+              'metadata.cryptomusStatus': 'sms_verified',
+              'metadata.verifiedAt': new Date(),
+            },
+          },
+          { new: true, session },
+        );
 
-        // Get smsBankRegex from BotConfig (would normally import BotConfig here)
-        // For now, using the default pattern from existing smsParser
-        const BANK_PATTERNS = [
-          /انتقال:([\d,]+)\+/,
-          /انتقالي:([\d,]+)\+/,
-          /مبلغ:?\s*([\d,]+)\s*ریال/,
-          /مبلغ:?\s*([\d,]+)/,
-          /(\d{4,})\s*ریال/,
-        ];
-
-        let extractedAmount = null;
-        for (const pattern of BANK_PATTERNS) {
-          const match = smsText.match(pattern);
-          if (match) {
-            const cleaned = match[1].replace(/,/g, '').trim();
-            extractedAmount = parseInt(cleaned, 10);
-            if (!isNaN(extractedAmount) && extractedAmount > 0) break;
-          }
+        if (!updated) {
+          logger.info({ amount: extractedAmount, userId }, '[sms-c2c] No matching pending transaction or already processed');
+          throw new PaymentGatewayError('No matching pending transaction');
         }
 
-        if (!extractedAmount) throw new PaymentGatewayError('Could not extract amount from SMS');
-
-        // Find the pending transaction with this exact amount
-        const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
-        let transaction = await TransactionRepository.findOne({
-          amount: extractedAmount,
-          'metadata.cryptomusStatus': 'pending_sms_verification',
-          createdAt: { $gte: thirtyMinutesAgo },
-        }, { session });
-
-        if (!transaction) throw new PaymentGatewayError('No matching pending transaction');
-
-        // Get the user to update wallet balance
-        const user = await UserRepository.findById(transaction.userId, { session });
+        const user = await UserRepository.findById(userId, { session });
         if (!user) throw new PaymentGatewayError('User not found');
 
-        // Update transaction status in metadata
-        transaction.metadata.cryptomusStatus = 'sms_verified';
-        transaction.metadata.verifiedAt = new Date();
-        transaction.balanceAfter = user.walletBalance + transaction.amount;
-        await transaction.save({ session });
-
-        // Add funds to user wallet
-        user.walletBalance = transaction.balanceAfter;
+        const newBalance = user.walletBalance + updated.amount;
+        user.walletBalance = newBalance;
         await user.save({ session });
 
-        logger.info({ transactionId: transaction._id, amount: transaction.amount, userId: transaction.userId }, '[sms-c2c] Payment verified and funds added');
+        // Record the final balance on the transaction
+        await TransactionRepository.model.updateOne(
+          { _id: updated._id },
+          { $set: { balanceAfter: newBalance } },
+          { session },
+        );
+
+        logger.info({ transactionId: updated._id, amount: updated.amount, userId }, '[sms-c2c] Payment verified and funds added');
 
         return {
           type: 'sms_verified',
-          transactionId: transaction._id,
-          amount: transaction.amount,
-          userId: transaction.userId,
+          transactionId: updated._id,
+          amount: updated.amount,
+          userId,
           verified: true,
         };
       });

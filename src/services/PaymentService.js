@@ -149,9 +149,9 @@ class PaymentService extends BaseService {
 
   // === SMS C2C Gateway methods ===
 
-  processSmsC2CWebhook = this.wrapMethod(async (_smsText, _botInstance) => {
+  processSmsC2CWebhook = this.wrapMethod(async (_smsText, _userId, _botInstance) => {
     try {
-      const result = await paymentGateway.handleWebhook('sms_c2c', { text: _smsText }, {});
+      const result = await paymentGateway.handleWebhook('sms_c2c', { text: _smsText, userId: _userId }, {});
       return result;
     } catch (err) {
       logger.error({ err, smsPreview: _smsText?.slice(0, 100) }, '[sms-c2c-webhook] processing error');
