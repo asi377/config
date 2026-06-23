@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { AuthError, ForbiddenError } from '../shared/errors.js';
-import User from '../models/User.js';
+import AdminRepository from '../repositories/AdminRepository.js';
 import config from '../config/index.js';
 
 function timingSafeEqual(a, b) {
@@ -31,8 +31,9 @@ export async function enterpriseAuth(req, _res, next) {
   }
 
   try {
-    const admin = await User.findById(adminId).lean();
-    if (!admin || !['superadmin', 'support'].includes(admin.role)) {
+    // FIX: Use AdminRepository (Admin model) instead of User model
+    const admin = await AdminRepository.findActiveById(adminId);
+    if (!admin) {
       return next(new ForbiddenError('Insufficient permissions'));
     }
     req.adminId = admin._id;

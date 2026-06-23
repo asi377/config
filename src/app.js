@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -26,9 +27,9 @@ export async function createApp(httpServer) {
       useDefaults: false,
       directives: {
         defaultSrc: ['\'self\''],
-        scriptSrc: ['\'self\'', '\'unsafe-inline\'', '\'unsafe-eval\''],
-        scriptSrcAttr: ['\'unsafe-inline\''],
-        styleSrc: ['\'self\'', '\'unsafe-inline\'', 'https:'],
+        scriptSrc: ['\'self\'', (req, res) => `'nonce-${res.locals.cspNonce}'`],
+        scriptSrcAttr: ['\'none\''],
+        styleSrc: ['\'self\'', 'https:', (req, res) => `'nonce-${res.locals.cspNonce}'`],
         imgSrc: ['\'self\'', 'data:', 'https:'],
         connectSrc: ['\'self\'', 'http://localhost:*', 'https://*', 'ws:', 'wss:'],
         fontSrc: ['\'self\'', 'https:', 'data:'],
@@ -44,6 +45,12 @@ export async function createApp(httpServer) {
     noSniff: true,
     xssFilter: true,
   }));
+
+  // Generate CSP nonce per request
+  app.use((req, res, next) => {
+    res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+    next();
+  });
 
   app.use(cors({
     origin: config.env === 'production' ? config.corsOrigin : '*',
@@ -103,6 +110,15 @@ export async function initializeDeps() {
     BullMQManager.createQueue('node-commands', { attempts: 5, backoffDelay: 5000 });
     BullMQManager.createQueue('provisioning', { attempts: 3 });
     BullMQManager.createQueue('billing', { attempts: 2 });
+    BullMQManager.createQueue('telegram-out', {
+      attempts: 3,
+      concurrency: 5,
+      limiter: { max: 30, duration: 1000 },
+    });
+    // Recover any jobs stalled from previous crash
+    BullMQManager.recoverStalledJobs().catch(err => {
+      logger.warn({ err }, '[app] Stall recovery check failed');
+    });
   }
   logger.info('[app] Job systems initialized');
 }

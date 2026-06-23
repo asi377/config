@@ -2,6 +2,7 @@ import BaseGateway, { PaymentGatewayError } from './BaseGateway.js';
 import UserRepository from '../../repositories/UserRepository.js';
 import TransactionRepository from '../../repositories/TransactionRepository.js';
 import logger from '../../config/logger.js';
+import mongoose from 'mongoose';
 
 export default class WalletGateway extends BaseGateway {
   constructor() {
@@ -10,83 +11,115 @@ export default class WalletGateway extends BaseGateway {
   }
 
   async createPayment(amount, currency, metadata = {}) {
-    const { userId, planId, description } = metadata;
+    const { userId, planId, description, idempotencyKey } = metadata;
     if (!userId) throw new PaymentGatewayError('userId required');
 
-    const user = await UserRepository.findById(userId);
-    if (!user) throw new PaymentGatewayError('User not found');
-
-    if (user.walletBalance < amount) {
-      throw new PaymentGatewayError('Insufficient balance', 'INSUFFICIENT_FUNDS');
+    // Idempotency check
+    if (idempotencyKey) {
+      const existing = await TransactionRepository.findOne({
+        'metadata.idempotencyKey': idempotencyKey,
+      });
+      if (existing) {
+        logger.info({ txId: existing._id, idempotencyKey }, '[wallet] Idempotent create — returning existing');
+        return {
+          gateway: 'wallet',
+          paymentId: existing._id.toString(),
+          status: existing.status,
+          amount,
+          transaction: existing,
+        };
+      }
     }
 
-    user.walletBalance -= amount;
-    await user.save();
+    const session = await mongoose.startSession();
+    try {
+      const result = await session.withTransaction(async () => {
+        const user = await UserRepository.findById(userId, { session });
+        if (!user) throw new PaymentGatewayError('User not found');
 
-    const tx = await TransactionRepository.create({
-      userId,
-      type: 'payment',
-      amount,
-      description: description || 'Wallet payment',
-      balanceBefore: user.walletBalance + amount,
-      balanceAfter: user.walletBalance,
-      referenceType: planId ? 'subscription' : null,
-      referenceId: planId || null,
-      metadata: {
-        category: planId ? 'subscription_purchase' : 'wallet_debit',
-        paymentStatus: 'completed',
-      },
-    });
+        if (user.walletBalance < amount) {
+          throw new PaymentGatewayError('Insufficient balance', 'INSUFFICIENT_FUNDS');
+        }
 
-    logger.info({ userId, amount, txId: tx._id }, '[wallet] Payment completed');
-    return {
-      gateway: 'wallet',
-      paymentId: tx._id.toString(),
-      status: 'completed',
-      amount,
-      transaction: tx,
-    };
+        user.walletBalance -= amount;
+        await user.save({ session });
+
+        const tx = await TransactionRepository.create({
+          userId,
+          type: 'payment',
+          amount,
+          description: description || 'Wallet payment',
+          balanceBefore: user.walletBalance + amount,
+          balanceAfter: user.walletBalance,
+          status: 'completed',
+          referenceType: planId ? 'subscription' : null,
+          referenceId: planId || null,
+          metadata: {
+            category: planId ? 'subscription_purchase' : 'wallet_debit',
+            idempotencyKey: idempotencyKey || null,
+          },
+        }, { session });
+
+        logger.info({ userId, amount, txId: tx._id }, '[wallet] Payment completed');
+        return tx;
+      });
+
+      return {
+        gateway: 'wallet',
+        paymentId: result._id.toString(),
+        status: 'completed',
+        amount,
+        transaction: result,
+      };
+    } finally {
+      await session.endSession();
+    }
   }
 
   async verifyPayment(paymentId) {
     const tx = await TransactionRepository.findById(paymentId);
     if (!tx) throw new PaymentGatewayError('Transaction not found');
-    const paymentStatus = tx.metadata?.paymentStatus;
     return {
       gateway: 'wallet',
       paymentId: tx._id.toString(),
-      status: paymentStatus || 'unknown',
+      status: tx.status,
       amount: tx.amount,
-      verified: paymentStatus === 'completed',
+      verified: tx.status === 'completed',
     };
   }
 
   async refundPayment(paymentId, amount) {
-    const tx = await TransactionRepository.findById(paymentId);
-    if (!tx) throw new PaymentGatewayError('Transaction not found');
+    const session = await mongoose.startSession();
+    try {
+      return await session.withTransaction(async () => {
+        const tx = await TransactionRepository.findById(paymentId, { session });
+        if (!tx) throw new PaymentGatewayError('Transaction not found');
 
-    const user = await UserRepository.findById(tx.userId);
-    if (!user) throw new PaymentGatewayError('User not found');
+        const user = await UserRepository.findById(tx.userId, { session });
+        if (!user) throw new PaymentGatewayError('User not found');
 
-    const refundAmount = amount || tx.amount;
-    user.walletBalance += refundAmount;
-    await user.save();
+        const refundAmount = amount || tx.amount;
+        user.walletBalance += refundAmount;
+        await user.save({ session });
 
-    const refundTx = await TransactionRepository.create({
-      userId: tx.userId,
-      type: 'refund',
-      amount: refundAmount,
-      description: `Refund for transaction ${paymentId}`,
-      referenceType: 'refund',
-      referenceId: tx._id,
-      metadata: {
-        category: 'wallet_refund',
-        paymentStatus: 'completed',
-      },
-    });
+        const refundTx = await TransactionRepository.create({
+          userId: tx.userId,
+          type: 'refund',
+          amount: refundAmount,
+          description: `Refund for transaction ${paymentId}`,
+          status: 'completed',
+          referenceType: 'refund',
+          referenceId: tx._id,
+          balanceBefore: user.walletBalance - refundAmount,
+          balanceAfter: user.walletBalance,
+          metadata: { category: 'wallet_refund' },
+        }, { session });
 
-    logger.info({ userId: tx.userId, refundAmount, txId: refundTx._id }, '[wallet] Refund completed');
-    return { gateway: 'wallet', refundId: refundTx._id.toString(), amount: refundAmount };
+        return { gateway: 'wallet', refundId: refundTx._id.toString(), amount: refundAmount };
+      });
+    } finally {
+      await session.endSession();
+    }
   }
 
   async handleWebhook(_payload) {

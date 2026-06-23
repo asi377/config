@@ -55,6 +55,7 @@ export default class CryptomusGateway extends BaseGateway {
           const transaction = await TransactionRepository.create({
             userId,
             type: 'payment',
+            status: 'pending',
             amount,
             currency,
             description: `Cryptomus USDT payment via TRC20 (order ${orderId})`,
@@ -136,11 +137,22 @@ export default class CryptomusGateway extends BaseGateway {
 
     if (signature !== expectedSignature) throw new PaymentGatewayError('Invalid webhook signature');
 
+    const eventUuid = payload?.data?.uuid || payload?.uuid;
+    if (!eventUuid) throw new PaymentGatewayError('Missing event UUID in payload');
+
     const session = await mongoose.startSession();
     try {
       const result = await session.withTransaction(async () => {
-        const { type, data } = payload;
+        // Idempotency: skip if this event UUID was already processed
+        const alreadyProcessed = await TransactionRepository.findOne({
+          'metadata.processedEventIds': eventUuid,
+        }, { session });
+        if (alreadyProcessed) {
+          logger.info({ eventUuid }, '[cryptomus] Duplicate webhook event — skipping');
+          return { type: 'already_processed', processed: true };
+        }
 
+        const { type, data } = payload;
         if (type !== 'payment') throw new PaymentGatewayError('Unsupported webhook type');
 
         const paymentId = data.uuid || data.payment_id;
@@ -156,65 +168,95 @@ export default class CryptomusGateway extends BaseGateway {
 
         if (!transaction) throw new PaymentGatewayError('Transaction not found');
 
+        // Atomic status transition guard — prevent double-spend
         const currentStatus = transaction.metadata?.cryptomusStatus;
+        const targetStatus = data.status;
 
-        if (data.status === 'paid' || data.status === 'paid_over') {
-          if (currentStatus === 'cryptomus_paid') {
-            logger.info(
-              { transactionId: transaction._id, paymentId, cryptomusStatus: currentStatus },
-              '[cryptomus] Transaction already processed'
-            );
-            return { type: 'already_processed', processed: true };
-          }
+        if (currentStatus === 'cryptomus_paid' && (targetStatus === 'paid' || targetStatus === 'paid_over')) {
+          logger.info({ transactionId: transaction._id, eventUuid }, '[cryptomus] Already paid — skipping');
+          return { type: 'already_processed', processed: true };
+        }
 
+        if (targetStatus === 'paid' || targetStatus === 'paid_over') {
           const user = await UserRepository.findById(transaction.userId, { session });
           if (!user) throw new PaymentGatewayError('User not found');
 
           const newBalance = user.walletBalance + transaction.amount;
 
-          transaction.metadata.cryptomusStatus = 'cryptomus_paid';
-          transaction.metadata.verifiedAt = new Date();
-          transaction.metadata.cryptomusPaymentId = paymentId;
-          transaction.balanceAfter = newBalance;
-          await transaction.save({ session });
+          // Use findOneAndUpdate for atomicity: only update if status hasn't changed
+          const updated = await TransactionRepository.model.findOneAndUpdate(
+            {
+              _id: transaction._id,
+              'metadata.cryptomusStatus': { $ne: 'cryptomus_paid' },
+            },
+            {
+              $set: {
+                status: 'completed',
+                'metadata.cryptomusStatus': 'cryptomus_paid',
+                'metadata.verifiedAt': new Date(),
+                'metadata.cryptomusPaymentId': paymentId,
+                'metadata.processedEventIds': [eventUuid],
+                balanceAfter: newBalance,
+              },
+              $push: { 'metadata.processedEventIds': eventUuid },
+            },
+            { new: true, session },
+          );
+
+          if (!updated) {
+            logger.info({ transactionId: transaction._id, eventUuid }, '[cryptomus] Race lost — transaction already paid');
+            return { type: 'already_processed', processed: true };
+          }
 
           user.walletBalance = newBalance;
           await user.save({ session });
 
-          logger.info(
-            { transactionId: transaction._id, paymentId, amount: transaction.amount, userId: transaction.userId },
-            '[cryptomus] Payment verified and funds added'
-          );
-
+          logger.info({ transactionId: transaction._id, eventUuid, amount: transaction.amount }, '[cryptomus] Payment verified');
           return { type: 'paid', transactionId: transaction._id, amount: transaction.amount, processed: true };
         }
 
-        if (data.status === 'failed') {
-          transaction.metadata.cryptomusStatus = 'cryptomus_failed';
-          transaction.metadata.failureReason = data.failure_reason || data.message || 'Unknown failure reason';
-          await transaction.save({ session });
-          logger.warn(
-            { transactionId: transaction._id, paymentId, reason: transaction.metadata.failureReason },
-            '[cryptomus] Payment failed'
+        if (targetStatus === 'failed') {
+          await TransactionRepository.model.updateOne(
+            { _id: transaction._id },
+            {
+              $set: {
+                status: 'failed',
+                'metadata.cryptomusStatus': 'cryptomus_failed',
+                'metadata.failureReason': data.failure_reason || data.message || 'Unknown failure',
+              },
+              $push: { 'metadata.processedEventIds': eventUuid },
+            },
+            { session },
           );
-          return { type: 'failed', transactionId: transaction._id, reason: transaction.metadata.failureReason, processed: true };
+          return { type: 'failed', transactionId: transaction._id, processed: true };
         }
 
-        if (data.status === 'refunded') {
-          transaction.metadata.cryptomusStatus = 'cryptomus_refunded';
-          transaction.metadata.refundedAt = new Date();
-          await transaction.save({ session });
-          logger.info({ transactionId: transaction._id, paymentId }, '[cryptomus] Payment refunded');
+        if (targetStatus === 'refunded') {
+          await TransactionRepository.model.updateOne(
+            { _id: transaction._id },
+            {
+              $set: {
+                status: 'refunded',
+                'metadata.cryptomusStatus': 'cryptomus_refunded',
+                'metadata.refundedAt': new Date(),
+              },
+              $push: { 'metadata.processedEventIds': eventUuid },
+            },
+            { session },
+          );
           return { type: 'refunded', transactionId: transaction._id, processed: true };
         }
 
-        transaction.metadata.cryptomusStatus = data.status;
-        await transaction.save({ session });
-        logger.warn(
-          { transactionId: transaction._id, status: data.status },
-          '[cryptomus] Unhandled payment status'
+        // Unknown status — just record it
+        await TransactionRepository.model.updateOne(
+          { _id: transaction._id },
+          {
+            $set: { 'metadata.cryptomusStatus': targetStatus },
+            $push: { 'metadata.processedEventIds': eventUuid },
+          },
+          { session },
         );
-        return { type: data.status, transactionId: transaction._id, processed: false };
+        return { type: targetStatus, transactionId: transaction._id, processed: false };
       });
 
       return result;

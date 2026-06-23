@@ -36,6 +36,7 @@ export default class SmsC2CGateway extends BaseGateway {
         const transaction = await TransactionRepository.create({
           userId,
           type: 'payment',
+          status: 'pending',
           amount: uniqueAmount,
           currency,
           description: `Card-to-card deposit for ${amount.toLocaleString()} IRR (payment ID: ${randomSuffix})`,

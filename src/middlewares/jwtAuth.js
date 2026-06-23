@@ -3,6 +3,7 @@ import { AuthError } from '../shared/errors.js';
 import config from '../config/index.js';
 import AdminRepository from '../repositories/AdminRepository.js';
 import SessionRepository from '../repositories/SessionRepository.js';
+import logger from '../config/logger.js';
 
 function extractBearerToken(req) {
   const authHeader = req.headers.authorization;
@@ -60,7 +61,13 @@ export async function optionalJwtAuth(req, _res, next) {
     req.adminId = admin?._id || null;
     req.adminRole = admin?.role || null;
     req.tokenId = payload.jti || null;
-  } catch {
+  } catch (err) {
+    // Log but don't fail — this is optional auth
+    if (err.name === 'TokenExpiredError' || err.name === 'JsonWebTokenError') {
+      logger.debug('[jwt] Optional auth: invalid/expired token');
+    } else {
+      logger.warn({ err }, '[jwt] Optional auth: unexpected error');
+    }
     req.admin = null;
   }
 

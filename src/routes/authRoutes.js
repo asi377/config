@@ -3,6 +3,9 @@ import AdminAuthService from '../services/admin/AdminAuthService.js';
 import { jwtAuth } from '../middlewares/jwtAuth.js';
 import { requirePermission } from '../middlewares/rbac.js';
 import AuditLogRepository from '../repositories/AuditLogRepository.js';
+import { createRateLimiter } from '../middlewares/index.js';
+
+const loginLimiter = createRateLimiter({ windowMs: 60000, max: 10 });
 
 const router = Router();
 
@@ -18,7 +21,7 @@ function getUserAgent(req) {
   return req.headers['user-agent'] || '';
 }
 
-router.post('/login', async (req, res, next) => {
+router.post('/login', loginLimiter, async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {

@@ -46,21 +46,49 @@ info "Detected OS: $OS $VER"
 # --- Prerequisites ---
 info "Installing system dependencies..."
 apt-get update -qq
-apt-get install -y -qq curl wget unzip jq ufw nodejs npm certbot python3 python3-pip || true
+apt-get install -y -qq curl wget unzip jq ufw certbot python3 python3-pip gnupg lsb-release ca-certificates || true
 
-# Ensure Node.js >= 18
+# Install Node.js via nodesource with GPG verification
 if ! command -v node &>/dev/null || [[ $(node -v | cut -d. -f1 | tr -d v) -lt 18 ]]; then
-  info "Installing Node.js 20.x..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  info "Installing Node.js 20.x (signed by nodesource GPG)..."
+  mkdir -p /usr/share/keyrings
+  curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg
+  echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
+  apt-get update -qq
   apt-get install -y -qq nodejs
 fi
 info "Node.js: $(node -v)"
 
-# --- Install XRay ---
+# --- Install XRay with checksum verification ---
 install_xray() {
-  info "Installing XRay-core..."
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh)" @ install
-  systemctl enable xray
+  info "Installing XRay-core with verification..."
+  local XRAY_VERSION=$(curl -fsSL "https://api.github.com/repos/XTLS/Xray-core/releases/latest" | grep '"tag_name"' | cut -d'"' -f4)
+  local ARCH=$(uname -m)
+  case "$ARCH" in
+    x86_64)  XRAY_ARCH="64" ;;
+    aarch64) XRAY_ARCH="arm64-v8a" ;;
+    *)       error "Unsupported architecture: $ARCH" ;;
+  esac
+  local XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-${XRAY_ARCH}.zip"
+  local TMPDIR=$(mktemp -d)
+
+  info "Downloading Xray ${XRAY_VERSION} for ${ARCH}..."
+  curl -fsSL "$XRAY_URL" -o "$TMPDIR/xray.zip"
+  curl -fsSL "${XRAY_URL}.dgst" -o "$TMPDIR/xray.zip.dgst"
+
+  # Verify SHA256 checksum
+  local EXPECTED_HASH=$(grep 'SHA256' "$TMPDIR/xray.zip.dgst" | head -1 | awk '{print $2}')
+  local ACTUAL_HASH=$(sha256sum "$TMPDIR/xray.zip" | awk '{print $1}')
+  if [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
+    error "Xray checksum mismatch! Expected: $EXPECTED_HASH, Got: $ACTUAL_HASH"
+  fi
+  info "Xray checksum verified"
+
+  unzip -qo "$TMPDIR/xray.zip" -d /usr/local/bin/
+  chmod +x /usr/local/bin/xray /usr/local/bin/xray-*
+  mkdir -p /usr/local/etc/xray /var/log/xray
+  systemctl enable xray 2>/dev/null || true
+  rm -rf "$TMPDIR"
   info "XRay installed: $(xray --version 2>/dev/null | head -1)"
 }
 

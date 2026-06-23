@@ -42,17 +42,22 @@ class BillingService extends BaseService {
         await TransactionRepository.create({
           userId: sub.ownerId,
           type: 'payment',
-          category: 'subscription_renewal',
-          amount: plan.basePrice,
-          description: `Auto-renewal: ${plan.name}`,
-          refId: sub._id,
           status: 'completed',
+          amount: plan.basePrice,
+          description: `Auto-renewal: ${plan.title}`,
+          balanceBefore: user.walletBalance + plan.basePrice,
+          balanceAfter: user.walletBalance,
+          referenceType: 'subscription',
+          referenceId: sub._id,
+          metadata: {
+            category: 'subscription_renewal',
+          },
         }, { session });
 
         EventBus.emit('subscription:renewed', {
           subscriptionId: sub._id,
           userId: sub.ownerId,
-          planName: plan.name,
+          planName: plan.title,
           amount: plan.basePrice,
           expireDate: sub.expireDate,
           rolloverBytes,

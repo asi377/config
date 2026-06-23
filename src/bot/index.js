@@ -8,6 +8,73 @@ import createSubLinkScene from './scenes/createSubLinkScene.js';
 import receiptUploadScene from './scenes/receiptUploadScene.js';
 import * as userController from './controllers/userController.js';
 import * as adminController from './controllers/adminController.js';
+import BullMQManager from '../queue/bullmq.js';
+
+/**
+ * Queue-based Telegram message dispatcher.
+ * Respects Telegram's 30 msg/s limit by throttling through BullMQ.
+ */
+class BotMessageQueue {
+  constructor(bot) {
+    this.bot = bot;
+    this.queue = BullMQManager.getQueue('telegram-out');
+    if (!this.queue) {
+      this.queue = BullMQManager.createQueue('telegram-out', {
+        concurrency: 5,
+        limiter: { max: 30, duration: 1000 }, // 30 msg/sec = Telegram safe limit
+        attempts: 3,
+        backoffDelay: 1000,
+      });
+    }
+  }
+
+  async sendMessage(chatId, text, extra = {}) {
+    await this.queue.add('sendMessage', { chatId, text, extra }, {
+      removeOnComplete: 1000,
+      removeOnFail: 100,
+    });
+  }
+
+  async sendPhoto(chatId, photo, extra = {}) {
+    await this.queue.add('sendPhoto', { chatId, photo, extra }, {
+      removeOnComplete: 1000,
+      removeOnFail: 100,
+    });
+  }
+
+  async sendDocument(chatId, document, extra = {}) {
+    await this.queue.add('sendDocument', { chatId, document, extra }, {
+      removeOnComplete: 1000,
+      removeOnFail: 100,
+    });
+  }
+
+  registerWorker() {
+    const worker = BullMQManager.createWorker('telegram-out', async (job) => {
+      const { chatId, text, photo, document, extra } = job.data;
+      try {
+        if (text) await this.bot.telegram.sendMessage(chatId, text, extra);
+        else if (photo) await this.bot.telegram.sendPhoto(chatId, photo, extra);
+        else if (document) await this.bot.telegram.sendDocument(chatId, document, extra);
+      } catch (err) {
+        // Handle Telegram rate limit (429) — auto-retry handled by BullMQ
+        if (err?.response?.error_code === 429) {
+          const retryAfter = err.response.parameters?.retry_after || 5;
+          logger.warn({ chatId, retryAfter }, '[bot-queue] Rate limited, will retry');
+          throw err; // BullMQ will retry with backoff
+        }
+        // Non-critical: skip message but don't crash
+        if (err?.response?.error_code === 403) {
+          logger.warn({ chatId }, '[bot-queue] Bot blocked by user');
+          return;
+        }
+        logger.error({ err, chatId }, '[bot-queue] Send failed');
+        throw err;
+      }
+    }, { concurrency: 5, limiter: { max: 30, duration: 1000 } });
+    return worker;
+  }
+}
 
 export function createBot() {
   const telegramConfig = {};
@@ -16,6 +83,11 @@ export function createBot() {
   const bot   = new Telegraf(config.botToken, { telegram: telegramConfig });
   const stage = new Scenes.Stage([createSubLinkScene, receiptUploadScene]);
 
+  // Attach queue to bot for use in controllers
+  const msgQueue = new BotMessageQueue(bot);
+  bot.context.msgQueue = msgQueue;
+  msgQueue.registerWorker();
+
   bot.use(session());
   bot.use(botRateLimit);
   bot.use(stage.middleware());
@@ -23,21 +95,20 @@ export function createBot() {
   // ── User commands ────────────────────────────────────────────────────────────
   bot.start(userController.startCommand);
 
-  bot.action('main_menu',       userController.handleMainMenu);
-  bot.action('profile',         userController.handleProfile);
-  bot.action('buy_renew',       userController.handleBuyRenew);
-  bot.action('my_subscriptions',userController.handleMySubscriptions);
-  bot.action('create_sublink',  userController.handleCreateSubLink);
-  bot.action('get_config',      userController.handleGetConfig);
-  bot.action('free_trial',      userController.handleFreeTrial);
+  bot.action('main_menu',        userController.handleMainMenu);
+  bot.action('profile',          userController.handleProfile);
+  bot.action('buy_renew',        userController.handleBuyRenew);
+  bot.action('my_subscriptions', userController.handleMySubscriptions);
+  bot.action('create_sublink',   userController.handleCreateSubLink);
+  bot.action('get_config',       userController.handleGetConfig);
+  bot.action('free_trial',       userController.handleFreeTrial);
 
   bot.action(/^category_(.+)$/,          userController.handleCategorySelection);
   bot.action(/^select_plan_(.+)$/,       userController.handlePlanSelection);
   bot.action(/^checkout_(.+)$/,          userController.handleCheckout);
-  bot.action(/^checkout_confirm_(.+)$/, userController.handleCheckoutConfirm);
+  bot.action(/^checkout_confirm_(.+)$/,  userController.handleCheckoutConfirm);
   bot.action(/^cardpay_(.+)$/,           userController.handleCardPayment);
   bot.action(/^autocardpay_(.+)$/,       userController.handleAutoCardPayment);
-  // Step-2 of client picker: config_client_<clientKey>_<uuid>
   bot.action(/^config_client_([a-z]+)_(.+)$/, userController.handleConfigClientPick);
 
   // ── Admin commands ───────────────────────────────────────────────────────────
@@ -70,13 +141,11 @@ export function createBot() {
   bot.action(/^receipt_(approve|reject)_(.+)$/, adminController.handleReceiptAction);
 
   // ── Broadcast text capture ───────────────────────────────────────────────────
-  // When an admin has chosen an audience, the next text message is the broadcast body.
   bot.on('text', async (ctx, next) => {
     const handled = await adminController.handleBroadcastText(ctx);
     if (!handled) return next();
   });
 
-  // Register BullMQ broadcast worker
   BroadcastService.registerWorker(bot);
 
   logger.info('[bot] All handlers registered');

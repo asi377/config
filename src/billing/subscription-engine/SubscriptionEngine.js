@@ -62,6 +62,7 @@ class SubscriptionEngine {
           await TransactionRepository.create({
             userId,
             type: 'payment',
+            status: payment.status === 'completed' ? 'completed' : 'pending',
             amount: plan.basePrice,
             description: `Purchase: ${plan.title}`,
             balanceBefore: user.walletBalance,
@@ -72,7 +73,6 @@ class SubscriptionEngine {
               category: 'subscription_purchase',
               gateway: payment.gateway,
               gatewayPaymentId: payment.paymentId,
-              paymentStatus: payment.status,
             },
           }, { session });
 
@@ -140,6 +140,7 @@ class SubscriptionEngine {
           await TransactionRepository.create({
             userId: sub.ownerId,
             type: 'payment',
+            status: payment.status === 'completed' ? 'completed' : 'pending',
             amount: plan.basePrice,
             description: `Renewal: ${plan.title}`,
             balanceBefore: user.walletBalance,
@@ -150,7 +151,6 @@ class SubscriptionEngine {
               category: 'subscription_renewal',
               gateway: payment.gateway,
               gatewayPaymentId: payment.paymentId,
-              paymentStatus: payment.status,
             },
           }, { session });
 

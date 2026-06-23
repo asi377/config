@@ -10,11 +10,24 @@ class SessionStore {
   }
 
   async set(sessionId, data, ttl = 3600) {
-    await redisClient.getClient().set(`${PREFIX}${sessionId}`, JSON.stringify(data), 'EX', ttl);
+    const multi = redisClient.getClient().multi();
+    // Store session data
+    multi.set(`${PREFIX}${sessionId}`, JSON.stringify(data), 'EX', ttl);
+    // Maintain admin index (a Set per admin)
+    if (data.adminId) {
+      multi.sadd(`${PREFIX}admin:${data.adminId}`, sessionId);
+    }
+    await multi.exec();
   }
 
   async del(sessionId) {
-    await redisClient.getClient().del(`${PREFIX}${sessionId}`);
+    const data = await this.get(sessionId);
+    const multi = redisClient.getClient().multi();
+    multi.del(`${PREFIX}${sessionId}`);
+    if (data?.adminId) {
+      multi.srem(`${PREFIX}admin:${data.adminId}`, sessionId);
+    }
+    await multi.exec();
   }
 
   async touch(sessionId, ttl = 3600) {
@@ -22,13 +35,24 @@ class SessionStore {
   }
 
   async findByAdmin(adminId) {
-    const keys = await redisClient.getClient().keys(`${PREFIX}*`);
+    // Use Redis Set index instead of KEYS * scan
+    const sessionIds = await redisClient.getClient().smembers(`${PREFIX}admin:${adminId}`);
+    if (!sessionIds.length) return [];
+
+    const pipeline = redisClient.getClient().pipeline();
+    for (const sid of sessionIds) {
+      pipeline.get(`${PREFIX}${sid}`);
+    }
+    const results = await pipeline.exec();
+
     const sessions = [];
-    for (const key of keys) {
-      const data = await redisClient.getClient().get(key);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (parsed.adminId === adminId) sessions.push(parsed);
+    for (let i = 0; i < results.length; i++) {
+      const err = results[i][0];
+      const data = results[i][1];
+      if (!err && data) {
+        try {
+          sessions.push(JSON.parse(data));
+        } catch { /* skip corrupt entry */ }
       }
     }
     return sessions;

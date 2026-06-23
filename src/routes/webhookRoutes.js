@@ -4,14 +4,17 @@ import PaymentService from '../services/PaymentService.js';
 import paymentGateway from '../billing/gateway/index.js';
 import { handleSmsWebhook } from '../utils/smsParser.js';
 import logger from '../config/logger.js';
+import { createRateLimiter } from '../middlewares/index.js';
+
+const webhookLimiter = createRateLimiter({ windowMs: 60000, max: 60 });
 
 const router = Router();
 
 // SMS forwarder webhook - called by external SMS forwarder app, no JWT auth
-router.post('/sms-forwarder', handleSmsWebhook);
+router.post('/sms-forwarder', webhookLimiter, handleSmsWebhook);
 
 // SMS C2C webhook - legacy endpoint kept for backward compatibility
-router.post('/sms', smsAuth, (req, res) => {
+router.post('/sms', webhookLimiter, smsAuth, (req, res) => {
   const smsText = req.body?.message || req.body?.text || '';
   if (!smsText) {
     return res.status(400).json({ error: 'Missing message body' });
@@ -30,7 +33,7 @@ router.post('/sms', smsAuth, (req, res) => {
 });
 
 // SMS C2C webhook - updated endpoint using SmsC2CGateway
-router.post('/sms-v2', smsAuth, async (req, res) => {
+router.post('/sms-v2', webhookLimiter, smsAuth, async (req, res) => {
   const smsText = req.body?.message || req.body?.text || '';
   if (!smsText) {
     return res.status(400).json({ success: false, error: 'Missing message body' });
@@ -51,7 +54,7 @@ router.post('/sms-v2', smsAuth, async (req, res) => {
 });
 
 // Cryptomus webhook - called by Cryptomus API, no JWT auth
-router.post('/cryptomus', async (req, res) => {
+router.post('/cryptomus', webhookLimiter, async (req, res) => {
   try {
     const headers = {
       'cryptomus-signature': req.headers['cryptomus-signature'] || req.headers['x-cryptomus-signature'],

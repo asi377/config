@@ -17,6 +17,12 @@ const transactionSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    status: {
+      type: String,
+      enum: ['pending', 'completed', 'failed', 'refunded', 'expired', 'cancelled'],
+      default: 'pending',
+      index: true,
+    },
     amount: {
       type: Number,
       required: [true, 'Amount is required'],
@@ -66,7 +72,9 @@ const transactionSchema = new mongoose.Schema(
 );
 
 transactionSchema.index({ userId: 1, createdAt: -1 });
-transactionSchema.index({ type: 1, createdAt: -1 });
+transactionSchema.index({ type: 1, status: 1, createdAt: -1 });
 transactionSchema.index({ referenceType: 1, referenceId: 1 });
+transactionSchema.index({ amount: 1, createdAt: -1 });
+transactionSchema.index({ uniqueAmount: 1 }, { sparse: true });
 
 export default mongoose.model('Transaction', transactionSchema);
