@@ -14,6 +14,13 @@ RUN addgroup -S hornet && adduser -S hornet -G hornet
 COPY --from=builder /app/node_modules ./node_modules
 COPY . .
 
+# Build admin panel
+WORKDIR /app/admin-panel
+RUN npm ci && npm run build
+
+WORKDIR /app
+RUN rm -rf public/admin && mkdir -p public/admin && cp -r admin-panel/dist/* public/admin/
+
 RUN chown -R hornet:hornet /app
 
 USER hornet
