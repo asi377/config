@@ -1,51 +1,61 @@
-import AdminTicketService from '../../services/admin/AdminTicketService.js';
-
 export async function getAllTickets(req, res, next) {
   try {
+    const Ticket = (await import('../../models/Ticket.js')).default;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
-    if (req.query.userId) filter.userId = req.query.userId;
-    const tickets = await AdminTicketService.getAllTickets(filter);
-    res.json({ success: true, data: tickets });
-  } catch (err) {
-    next(err);
-  }
+
+    const [tickets, total] = await Promise.all([
+      Ticket.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit)
+        .populate('userId', 'telegramId')
+        .lean(),
+      Ticket.countDocuments(filter),
+    ]);
+
+    res.json({ success: true, data: { tickets, total, page, pages: Math.ceil(total / limit) } });
+  } catch (err) { next(err); }
 }
 
 export async function getTicket(req, res, next) {
   try {
-    const ticket = await AdminTicketService.getTicketById(req.params.id);
+    const Ticket = (await import('../../models/Ticket.js')).default;
+    const ticket = await Ticket.findById(req.params.id).populate('userId', 'telegramId').lean();
+    if (!ticket) return res.status(404).json({ success: false, error: 'Ticket not found' });
     res.json({ success: true, data: ticket });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 }
 
 export async function replyToTicket(req, res, next) {
   try {
-    const { text } = req.body;
-    if (!text) return res.status(400).json({ success: false, error: 'text is required' });
-    const ticket = await AdminTicketService.replyToTicket(req.params.id, req.adminId, req.adminRole, text);
+    const Ticket = (await import('../../models/Ticket.js')).default;
+    const { reply } = req.body;
+    if (!reply) return res.status(400).json({ success: false, error: 'reply is required' });
+
+    const ticket = await Ticket.findByIdAndUpdate(
+      req.params.id,
+      { $push: { replies: { message: reply, adminId: req.adminId, createdAt: new Date() } } },
+      { new: true },
+    );
+    if (!ticket) return res.status(404).json({ success: false, error: 'Ticket not found' });
     res.json({ success: true, data: ticket });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 }
 
 export async function closeTicket(req, res, next) {
   try {
-    const ticket = await AdminTicketService.closeTicket(req.params.id);
+    const Ticket = (await import('../../models/Ticket.js')).default;
+    const ticket = await Ticket.findByIdAndUpdate(req.params.id, { $set: { status: 'closed' } }, { new: true });
+    if (!ticket) return res.status(404).json({ success: false, error: 'Ticket not found' });
     res.json({ success: true, data: ticket });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 }
 
 export async function reopenTicket(req, res, next) {
   try {
-    const ticket = await AdminTicketService.reopenTicket(req.params.id);
+    const Ticket = (await import('../../models/Ticket.js')).default;
+    const ticket = await Ticket.findByIdAndUpdate(req.params.id, { $set: { status: 'open' } }, { new: true });
+    if (!ticket) return res.status(404).json({ success: false, error: 'Ticket not found' });
     res.json({ success: true, data: ticket });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 }
