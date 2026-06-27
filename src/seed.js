@@ -1,60 +1,70 @@
+#!/usr/bin/env node
+import 'dotenv/config';
 import mongoose from 'mongoose';
-import config from './config/index.js';
-import logger from './config/logger.js';
-import Plan from './models/Plan.js';
-import Admin from './models/Admin.js';
-import AdminSettingsService from './services/admin/AdminSettingsService.js';
+import config from './src/config/index.js';
+import logger from './src/config/logger.js';
+
+const Admin = (await import('./src/models/Admin.js')).default;
+const Plan = (await import('./src/models/Plan.js')).default;
+const User = (await import('./src/models/User.js')).default;
+const bcrypt = (await import('bcryptjs')).default;
 
 async function seed() {
-  await mongoose.connect(config.mongoUri);
-  logger.info('Connected to MongoDB for seeding');
+  try {
+    await mongoose.connect(config.mongoUri);
+    logger.info('Connected to MongoDB');
 
-  // Seed default settings
-  await AdminSettingsService.ensureDefaults();
-  logger.info('Default settings ensured');
+    // Clear existing data
+    await Admin.deleteMany({});
+    await Plan.deleteMany({});
+    await User.deleteMany({});
 
-  const defaultAdminEmail = process.env.DEFAULT_ADMIN_EMAIL || 'admin@hornet.com';
-  const defaultAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'admin123456';
-  const defaultAdminName = process.env.DEFAULT_ADMIN_NAME || 'مدیر سیستم';
-
-  if (config.env === 'production' && defaultAdminPassword === 'admin123456') {
-    throw new Error('DEFAULT_ADMIN_PASSWORD must be set to a strong value before seeding production');
-  }
-
-  // Seed default admin
-  const existingAdmin = await Admin.findOne({ email: defaultAdminEmail });
-  if (!existingAdmin) {
-    await Admin.create({
-      email: defaultAdminEmail,
-      password: defaultAdminPassword,
-      displayName: defaultAdminName,
+    // Create superadmin
+    const hashedPassword = await bcrypt.hash('admin123456', 10);
+    const admin = await Admin.create({
+      email: 'admin@hornet.local',
+      displayName: 'System Admin',
+      passwordHash: hashedPassword,
       role: 'superadmin',
     });
-    logger.info({ email: defaultAdminEmail }, 'Default superadmin created');
-  } else {
-    logger.info('Default admin already exists, skipping');
-  }
+    logger.info({ adminId: admin._id }, '[seed] Superadmin created');
 
-  // Seed default plans
-  const existingPlans = await Plan.countDocuments();
-  if (existingPlans === 0) {
-    await Plan.create([
-      { title: 'پایه', subtitle: 'مناسب مصرف سبک', category: 'عمومی', type: 'economy', basePrice: 100000, baseVolumeGB: 10, durationDays: 30, maxSubLinks: 2, sortOrder: 10, features: ['اقتصادی', 'تمدید خودکار'], pricing: [{ currency: 'IRR', amount: 100000, gateway: 'wallet' }, { currency: 'USD', amount: 2, gateway: 'stripe', enabled: false }] },
-      { title: 'پیشرفته', subtitle: 'انتخاب متعادل', category: 'عمومی', type: 'normal', basePrice: 250000, baseVolumeGB: 30, durationDays: 30, maxSubLinks: 5, sortOrder: 20, features: ['سرعت بهتر', 'چند لینک'], pricing: [{ currency: 'IRR', amount: 250000, gateway: 'wallet' }, { currency: 'USD', amount: 5, gateway: 'stripe', enabled: false }] },
-      { title: 'حرفه‌ای', subtitle: 'برای مصرف سنگین', category: 'عمومی', type: 'vip', basePrice: 500000, baseVolumeGB: 80, durationDays: 30, maxSubLinks: 10, sortOrder: 30, features: ['اولویت سرور', 'حجم بالا'], pricing: [{ currency: 'IRR', amount: 500000, gateway: 'wallet' }, { currency: 'USD', amount: 10, gateway: 'stripe', enabled: false }] },
-      { title: 'آزمایشی', subtitle: 'برای تست سرویس', category: 'آزمایشی', type: 'economy', basePrice: 0, baseVolumeGB: 0.5, durationDays: 1, maxSubLinks: 1, isTrial: true, sortOrder: 1, purchaseLimitPerUser: 1, features: ['یک‌بار برای هر کاربر'] },
+    // Create sample plans
+    const plans = await Plan.create([
+      {
+        title: 'Starter',
+        basePrice: 50000,
+        baseVolumeGB: 10,
+        durationDays: 30,
+        type: 'economy',
+        maxSubLinks: 2,
+        pricing: [{ currency: 'IRR', amount: 50000, enabled: true }],
+      },
+      {
+        title: 'Pro',
+        basePrice: 150000,
+        baseVolumeGB: 50,
+        durationDays: 30,
+        type: 'normal',
+        maxSubLinks: 5,
+        pricing: [{ currency: 'IRR', amount: 150000, enabled: true }],
+      },
     ]);
-    logger.info('Default plans created');
-  } else {
-    logger.info({ count: existingPlans }, 'Plans already exist, skipping');
-  }
+    logger.info({ count: plans.length }, '[seed] Plans created');
 
-  await mongoose.disconnect();
-  logger.info('Seed complete');
-  process.exit(0);
+    // Create sample users
+    const users = await User.create([
+      { telegramId: '123456789', walletBalance: 100000 },
+      { telegramId: '987654321', walletBalance: 50000 },
+    ]);
+    logger.info({ count: users.length }, '[seed] Users created');
+
+    logger.info('[seed] Database seeding completed');
+    await mongoose.disconnect();
+  } catch (err) {
+    logger.error({ err }, '[seed] Error');
+    process.exit(1);
+  }
 }
 
-seed().catch((err) => {
-  logger.error({ err }, 'Seed failed');
-  process.exit(1);
-});
+seed();

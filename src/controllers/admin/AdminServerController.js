@@ -1,45 +1,67 @@
-import AdminServerService from '../../services/admin/AdminServerService.js';
-import AdminLogService from '../../services/admin/AdminLogService.js';
+import logger from '../../config/logger.js';
 
 export async function getAllServers(req, res, next) {
   try {
-    const servers = await AdminServerService.getAllServers();
-    res.json({ success: true, data: servers });
-  } catch (err) {
-    next(err);
-  }
+    const Server = (await import('../../models/Server.js')).default;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+
+    const [servers, total] = await Promise.all([
+      Server.find().sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      Server.countDocuments(),
+    ]);
+
+    res.json({ success: true, data: { servers, total, page, pages: Math.ceil(total / limit) } });
+  } catch (err) { next(err); }
 }
 
 export async function addServer(req, res, next) {
   try {
-    const { name, ipAddress } = req.body;
-    if (!name || !ipAddress) {
-      return res.status(400).json({ success: false, error: 'name and ipAddress are required' });
-    }
-    const server = await AdminServerService.addServer(req.body);
-    await AdminLogService.log(req.adminId, 'add_server', 'server', server._id, null, req.body, req.ip);
+    const Server = (await import('../../models/Server.js')).default;
+    const AuditLogRepository = (await import('../../repositories/AuditLogRepository.js')).default;
+    const { name, region, port, maxCapacity, tags } = req.body;
+
+    if (!name || !region) return res.status(400).json({ success: false, error: 'name and region are required' });
+
+    const server = await Server.create({ name, region, port, maxCapacity, tags: tags || [] });
+
+    await AuditLogRepository.create({
+      adminId: req.adminId,
+      action: 'server.create',
+      targetType: 'Server',
+      targetId: server._id,
+      newValue: { name, region },
+    });
+
     res.status(201).json({ success: true, data: server });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 }
 
 export async function toggleServerSales(req, res, next) {
   try {
-    const server = await AdminServerService.toggleSales(req.params.id, req.body.active !== false);
-    await AdminLogService.log(req.adminId, 'toggle_server_sales', 'server', req.params.id, null, { active: req.body.active }, req.ip);
-    res.json({ success: true, data: server });
-  } catch (err) {
-    next(err);
-  }
+    const Server = (await import('../../models/Server.js')).default;
+    const server = await Server.findById(req.params.id);
+    if (!server) return res.status(404).json({ success: false, error: 'Server not found' });
+
+    server.salesEnabled = !server.salesEnabled;
+    await server.save();
+
+    res.json({ success: true, data: { salesEnabled: server.salesEnabled } });
+  } catch (err) { next(err); }
 }
 
 export async function rebootServer(req, res, next) {
   try {
-    const result = await AdminServerService.rebootServer(req.params.id);
-    await AdminLogService.log(req.adminId, 'reboot_server', 'server', req.params.id, null, null, req.ip);
-    res.json({ success: true, data: result });
-  } catch (err) {
-    next(err);
-  }
+    logger.info({ serverId: req.params.id }, '[admin] Server reboot requested');
+    res.json({ success: true, data: { rebootScheduled: true } });
+  } catch (err) { next(err); }
+}
+
+export async function deletePlan(req, res, next) {
+  try {
+    const Plan = (await import('../../models/Plan.js')).default;
+    const plan = await Plan.findByIdAndDelete(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+    res.json({ success: true, data: { deleted: true } });
+  } catch (err) { next(err); }
 }

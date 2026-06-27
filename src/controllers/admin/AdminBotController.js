@@ -1,30 +1,22 @@
-import AdminBotService from '../../services/admin/AdminBotService.js';
-
 export async function getBroadcastTargets(req, res, next) {
   try {
-    const audience = req.query.audience || 'all';
-    const ids = await AdminBotService.getBroadcastTargets(audience);
-    res.json({ success: true, data: { audience, count: ids.length } });
-  } catch (err) {
-    next(err);
-  }
+    const User = (await import('../../models/User.js')).default;
+    const users = await User.find({ role: { $ne: 'banned' } }, { telegramId: 1, role: 1 }).lean();
+    res.json({ success: true, data: users });
+  } catch (err) { next(err); }
 }
 
 export async function sendBroadcast(req, res, next) {
   try {
-    const { audience, message } = req.body;
-    if (!message) return res.status(400).json({ success: false, error: 'message is required' });
+    const BullMQManager = (await import('../../queue/bullmq.js')).default;
+    const { text, targetRole } = req.body;
 
-    const bot = req.app.get('bot');
-    if (!bot) return res.status(500).json({ success: false, error: 'Bot instance not available' });
+    if (!text) return res.status(400).json({ success: false, error: 'text is required' });
 
-    const targets = ['active', 'expired'].includes(audience)
-      ? await AdminBotService.getBroadcastTargets(audience)
-      : await AdminBotService.getBroadcastTargets('all');
+    const queue = BullMQManager.getQueue('telegram-out');
+    if (!queue) return res.status(500).json({ success: false, error: 'Queue not available' });
 
-    const result = await AdminBotService.sendBroadcast(bot, targets, message);
-    res.json({ success: true, data: result });
-  } catch (err) {
-    next(err);
-  }
+    await queue.add('broadcast', { text, targetRole: targetRole || 'user' }, { removeOnComplete: true });
+    res.json({ success: true, data: { scheduled: true } });
+  } catch (err) { next(err); }
 }

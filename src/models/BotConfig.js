@@ -1,62 +1,22 @@
 import mongoose from 'mongoose';
 
-const botMenuSchema = new mongoose.Schema(
-  {
-    text: {
-      type: String,
-      required: [true, 'Menu button text is required'],
-      trim: true,
-    },
-    actionId: {
-      type: String,
-      required: [true, 'Menu action ID is required'],
-      trim: true,
-    },
-    order: {
-      type: Number,
-      default: 0,
-    },
-    row: {
-      type: Number,
-      default: 0,
-    },
-  },
-  { _id: false }
-);
-
-const botConfigSchema = new mongoose.Schema(
-  {
-    key: {
-      type: String,
-      default: 'singleton',
-      unique: true,
-    },
-    welcomeText: {
-      type: String,
-      default: 'به ربات خوش آمدید! لطفاً یکی از گزینه‌های زیر را انتخاب کنید:',
-    },
-    smsBankRegex: {
-      type: String,
-      default: '',
-    },
-    cryptoPaymentEnabled: {
-      type: Boolean,
-      default: false,
-    },
-    botMenus: {
-      type: [botMenuSchema],
-      default: [],
-    },
-  },
-  { timestamps: true }
-);
+const botConfigSchema = new mongoose.Schema({
+  welcomeText: String,
+  smsBankRegex: String,
+  cryptoPaymentEnabled: { type: Boolean, default: false },
+  botMenus: [String],
+  updatedAt: { type: Date, default: Date.now },
+});
 
 botConfigSchema.statics.getSingleton = async function () {
-  let doc = await this.findOne({ key: 'singleton' });
-  if (!doc) {
-    doc = await this.create({ key: 'singleton' });
+  let config = await this.findOne();
+  if (!config) {
+    config = await this.create({
+      welcomeText: 'Welcome to HORNET VPN',
+      botMenus: ['buy', 'account', 'support'],
+    });
   }
-  return doc;
+  return config;
 };
 
 export default mongoose.model('BotConfig', botConfigSchema);

@@ -19,7 +19,9 @@
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
     "admin": "echo \"Admin dashboard: http://localhost:3000/admin\"",
-    "docs": "echo \"API docs: http://localhost:3000/docs\""
+    "docs": "echo \"API docs: http://localhost:3000/docs\"",
+    "build:admin": "cd admin-panel && npm run build && cd .. && rm -rf public/admin && mkdir -p public/admin && cp -r admin-panel/dist/* public/admin/",
+    "postinstall": "npm run build:admin"
   },
   "keywords": [],
   "author": "",
