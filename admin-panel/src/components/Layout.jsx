@@ -1,80 +1,78 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import {
-  Bot,
-  Server,
-  Wallet,
-  LogOut,
-  Shield,
-} from 'lucide-react';
-
-const navItems = [
-  { to: '/bot-builder', icon: Bot, label: 'Bot Builder' },
-  { to: '/server-fleet', icon: Server, label: 'Server Fleet' },
-  { to: '/finance', icon: Wallet, label: 'Finance' },
-];
+import { useNavigate } from 'react-router-dom';
+import { Menu, LogOut } from 'lucide-react';
 
 export default function Layout() {
   const { admin, logout } = useAuth();
   const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const handleLogout = async () => {
     await logout();
     navigate('/login');
   };
 
+  const menuItems = [
+    { name: 'Dashboard', path: '/', icon: '📊' },
+    { name: 'Users', path: '/users', icon: '👥' },
+    { name: 'Plans', path: '/plans', icon: '📋' },
+    { name: 'Receipts', path: '/receipts', icon: '📄' },
+    { name: 'Bot Builder', path: '/bot-builder', icon: '🤖' },
+    { name: 'Server Fleet', path: '/server-fleet', icon: '🖥️' },
+    { name: 'Finance', path: '/finance', icon: '💰' },
+    { name: 'Settings', path: '/settings', icon: '⚙️' },
+  ];
+
   return (
     <div className="flex h-screen bg-gray-950">
-      <aside className="w-64 flex-shrink-0 border-r border-gray-800 bg-gray-900 flex flex-col">
-        <div className="flex items-center gap-3 px-5 h-16 border-b border-gray-800">
-          <Shield className="w-6 h-6 text-primary-400" />
-          <span className="font-bold text-lg">Admin Panel</span>
+      {/* Sidebar */}
+      <div className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-gray-900 border-r border-gray-800 transition-all duration-300 flex flex-col`}>
+        <div className="p-4 border-b border-gray-800 flex items-center justify-between">
+          {sidebarOpen && <h1 className="font-bold text-lg">HORNET</h1>}
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-gray-800 rounded">
+            <Menu size={20} />
+          </button>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1">
-          {navItems.map(({ to, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-primary-600/20 text-primary-400 border border-primary-600/30'
-                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-                }`
-              }
+        <nav className="flex-1 p-4 space-y-2">
+          {menuItems.map((item) => (
+            <a
+              key={item.path}
+              href={item.path}
+              className="flex items-center gap-3 px-4 py-2 rounded hover:bg-primary-600 transition text-gray-300 hover:text-white"
             >
-              <Icon className="w-5 h-5" />
-              {label}
-            </NavLink>
+              <span className="text-xl">{item.icon}</span>
+              {sidebarOpen && <span>{item.name}</span>}
+            </a>
           ))}
         </nav>
 
-        <div className="p-3 border-t border-gray-800">
-          <div className="flex items-center gap-3 px-3 py-2">
-            <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center text-xs font-bold">
-              {admin?.displayName?.[0] || 'A'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{admin?.displayName || 'Admin'}</p>
-              <p className="text-xs text-gray-500 truncate">{admin?.email || ''}</p>
-            </div>
-          </div>
+        <div className="p-4 border-t border-gray-800">
           <button
             onClick={handleLogout}
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-400 hover:text-red-400 hover:bg-gray-800 w-full mt-1 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-2 rounded hover:bg-red-600 transition text-gray-300 hover:text-white"
           >
-            <LogOut className="w-5 h-5" />
-            Logout
+            <LogOut size={20} />
+            {sidebarOpen && <span>Logout</span>}
           </button>
         </div>
-      </aside>
+      </div>
 
-      <main className="flex-1 overflow-auto">
-        <div className="p-6 max-w-7xl mx-auto">
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <header className="bg-gray-900 border-b border-gray-800 px-8 py-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Admin Panel</h2>
+            <div className="text-sm text-gray-400">{admin?.email}</div>
+          </div>
+        </header>
+        <main className="flex-1 overflow-auto p-8">
           <Outlet />
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
+
+import { Outlet } from 'react-router-dom';
