@@ -3,6 +3,8 @@ import logger from '../../config/logger.js';
 export async function startCommand(ctx) {
   try {
     const User = (await import('../../models/User.js')).default;
+    const BotConfig = (await import('../../models/BotConfig.js')).default;
+    const { generateDynamicMenuKeyboard } = await import('../keyboards.js');
     const telegramId = String(ctx.from.id);
     let user = await User.findOne({ telegramId });
 
@@ -14,18 +16,11 @@ export async function startCommand(ctx) {
       logger.info({ telegramId }, '[bot] New user registered');
     }
 
+    const config = await BotConfig.getSingleton();
     await ctx.msgQueue.sendMessage(
       ctx.chat.id,
-      `👋 Welcome to HORNET VPN!\n\nChoose an option below:`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '🛍️ Buy Subscription', callback_data: 'buy_renew' }],
-            [{ text: '📱 My Account', callback_data: 'profile' }],
-            [{ text: '⚙️ Help', callback_data: 'help' }],
-          ],
-        },
-      },
+      config.welcomeText || '👋 Welcome to HORNET VPN!\n\nChoose an option below:',
+      generateDynamicMenuKeyboard(config.botMenus),
     );
   } catch (err) {
     logger.error({ err }, '[bot] startCommand error');
@@ -34,15 +29,10 @@ export async function startCommand(ctx) {
 }
 
 export async function handleMainMenu(ctx) {
-  await ctx.editMessageText('Main Menu:', {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: '🛍️ Buy/Renew', callback_data: 'buy_renew' }],
-        [{ text: '📊 My Subscriptions', callback_data: 'my_subscriptions' }],
-        [{ text: '⚙️ Settings', callback_data: 'profile' }],
-      ],
-    },
-  });
+  const BotConfig = (await import('../../models/BotConfig.js')).default;
+  const { generateDynamicMenuKeyboard } = await import('../keyboards.js');
+  const config = await BotConfig.getSingleton();
+  await ctx.editMessageText(config.welcomeText || 'Main Menu:', generateDynamicMenuKeyboard(config.botMenus));
 }
 
 export async function handleProfile(ctx) {

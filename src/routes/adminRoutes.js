@@ -174,17 +174,36 @@ router.get('/bot-config', requirePermission('settings.read'), async (req, res, n
 router.put('/bot-config', requirePermission('settings.write'), async (req, res, next) => {
   try {
     const BotConfig = (await import('../models/BotConfig.js')).default;
-    const { welcomeText, smsBankRegex, cryptoPaymentEnabled, botMenus } = req.body;
+    const { ValidationError } = await import('../shared/errors.js');
+    const { validateBotMenuChains } = await import('../bot/menuValidation.js');
+    const {
+      welcomeText, smsBankRegex, cryptoPaymentEnabled, botMenus,
+      channelGateEnabled, requiredChannels,
+    } = req.body;
+
+    if (botMenus !== undefined) {
+      try {
+        validateBotMenuChains(botMenus);
+      } catch (chainErr) {
+        return next(new ValidationError(chainErr.message));
+      }
+    }
+
     const config = await BotConfig.getSingleton();
     if (welcomeText !== undefined) config.welcomeText = welcomeText;
     if (smsBankRegex !== undefined) config.smsBankRegex = smsBankRegex;
     if (cryptoPaymentEnabled !== undefined) config.cryptoPaymentEnabled = cryptoPaymentEnabled;
     if (botMenus !== undefined) config.botMenus = botMenus;
+    if (channelGateEnabled !== undefined) config.channelGateEnabled = channelGateEnabled;
+    if (requiredChannels !== undefined) config.requiredChannels = requiredChannels;
     await config.save();
     const AuditLogRepository = (await import('../repositories/AuditLogRepository.js')).default;
     await AuditLogRepository.create({
       adminId: req.adminId, action: 'bot-config.update', targetType: 'BotConfig', targetId: config._id,
-      newValue: { welcomeText, smsBankRegex, cryptoPaymentEnabled, botMenus: botMenus?.length },
+      newValue: {
+        welcomeText, smsBankRegex, cryptoPaymentEnabled, botMenus: botMenus?.length,
+        channelGateEnabled, requiredChannels: requiredChannels?.length,
+      },
     });
     res.json({ success: true, data: config });
   } catch (err) { next(err); }

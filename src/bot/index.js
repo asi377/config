@@ -3,11 +3,13 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import config from '../config/index.js';
 import logger from '../config/logger.js';
 import { botRateLimit } from '../middlewares/rateLimiter.js';
+import { channelGate } from './middlewares/channelGate.js';
 import BroadcastService from '../services/admin/BroadcastService.js';
 import createSubLinkScene from './scenes/createSubLinkScene.js';
 import receiptUploadScene from './scenes/receiptUploadScene.js';
 import * as userController from './controllers/userController.js';
 import * as adminController from './controllers/adminController.js';
+import { handleDynamicMenuAction } from './controllers/menuController.js';
 import BullMQManager from '../queue/bullmq.js';
 
 /**
@@ -94,6 +96,7 @@ export function createBot() {
 
   bot.use(session());
   bot.use(botRateLimit);
+  bot.use(channelGate);
   bot.use(stage.middleware());
 
   // ── User commands ────────────────────────────────────────────────────────────
@@ -144,6 +147,11 @@ export function createBot() {
   bot.action(/^admin_plan_toggle_(.+)$/,   adminController.handleAdminPlanToggle);
   bot.action(/^admin_server_detail_(.+)$/, adminController.handleAdminServerDetail);
   bot.action(/^receipt_(approve|reject)_(.+)$/, adminController.handleReceiptAction);
+
+  // ── Custom bot-menu actions (admin-defined via BotBuilder) ───────────────────
+  // Registered last so it only ever sees callback_data that none of the
+  // built-in bot.action(...) handlers above matched.
+  bot.on('callback_query', handleDynamicMenuAction);
 
   // ── Broadcast text capture ───────────────────────────────────────────────────
   bot.on('text', async (ctx, next) => {

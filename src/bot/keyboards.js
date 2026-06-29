@@ -192,6 +192,35 @@ export function generateBroadcastKeyboard() {
   ]);
 }
 
+// ─── Dynamic: DB-driven main menu (BotConfig.botMenus) ───────────────────────
+/**
+ * Renders the admin-configurable main menu stored on BotConfig.botMenus.
+ * Buttons are grouped by `row` (ascending) and ordered by `order` within a row.
+ * Each button's callback_data is its `actionId` — whether that resolves to a
+ * built-in bot.action handler or a custom message chain is decided at
+ * dispatch time, not here.
+ *
+ * @param {Array<{actionId: string, text: string, order?: number, row?: number}>} botMenus
+ * @returns {Markup}
+ */
+export function generateDynamicMenuKeyboard(botMenus) {
+  if (!botMenus || botMenus.length === 0) return mainMenuKeyboard;
+
+  const rows = new Map();
+  for (const item of botMenus) {
+    const rowIndex = item.row ?? 0;
+    if (!rows.has(rowIndex)) rows.set(rowIndex, []);
+    rows.get(rowIndex).push(item);
+  }
+
+  const sortedRowIndexes = [...rows.keys()].sort((a, b) => a - b);
+  const keyboard = sortedRowIndexes.map((rowIndex) => rows.get(rowIndex)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((item) => Markup.button.callback(item.text, item.actionId)));
+
+  return Markup.inlineKeyboard(keyboard);
+}
+
 // ─── Dynamic: plan list ───────────────────────────────────────────────────────
 /**
  * @param {Array<{_id: string, title: string, basePrice: number, isActive: boolean}>} plans

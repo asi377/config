@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import toast from 'react-hot-toast';
-import { GripVertical, Plus, Trash2, Save, Smartphone, Menu, MessageSquareText } from 'lucide-react';
+import { GripVertical, Plus, Trash2, Save, Smartphone, Menu, MessageSquareText, Lock, Radio } from 'lucide-react';
 import api from '../api/client';
 
-const DEFAULT_BUTTON = { text: 'New Button', actionId: 'action_new', order: 0, row: 0 };
+const DEFAULT_BUTTON = {
+  text: 'New Button', actionId: 'action_new', order: 0, row: 0, type: 'builtin', messageText: '', followUpButtons: [],
+};
+
+const DEFAULT_CHANNEL = { chatId: '', title: '', inviteLink: '' };
 
 function MobilePreview({ welcomeText, menus }) {
   const grouped = menus.reduce((acc, btn) => {
@@ -49,6 +53,8 @@ function MobilePreview({ welcomeText, menus }) {
 export default function BotBuilder() {
   const [welcomeText, setWelcomeText] = useState('');
   const [menus, setMenus] = useState([]);
+  const [channelGateEnabled, setChannelGateEnabled] = useState(false);
+  const [requiredChannels, setRequiredChannels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -58,7 +64,9 @@ export default function BotBuilder() {
       const cfg = res.data.data;
       setWelcomeText(cfg.welcomeText || '');
       const sorted = (cfg.botMenus || []).sort((a, b) => (a.row ?? 0) - (b.row ?? 0) || (a.order ?? 0) - (b.order ?? 0));
-      setMenus(sorted);
+      setMenus(sorted.map((m) => ({ type: 'builtin', messageText: '', followUpButtons: [], ...m })));
+      setChannelGateEnabled(!!cfg.channelGateEnabled);
+      setRequiredChannels(cfg.requiredChannels || []);
     } catch {
       toast.error('Failed to load bot config');
     } finally {
@@ -94,10 +102,45 @@ export default function BotBuilder() {
     setMenus(items);
   };
 
+  const addFollowUpButton = (index) => {
+    const items = Array.from(menus);
+    const followUpButtons = [...(items[index].followUpButtons || []), { text: 'Next', actionId: `action_${Date.now()}` }];
+    items[index] = { ...items[index], followUpButtons };
+    setMenus(items);
+  };
+
+  const updateFollowUpButton = (index, fbIndex, field, value) => {
+    const items = Array.from(menus);
+    const followUpButtons = items[index].followUpButtons.map((fb, i) => (i === fbIndex ? { ...fb, [field]: value } : fb));
+    items[index] = { ...items[index], followUpButtons };
+    setMenus(items);
+  };
+
+  const removeFollowUpButton = (index, fbIndex) => {
+    const items = Array.from(menus);
+    items[index] = { ...items[index], followUpButtons: items[index].followUpButtons.filter((_, i) => i !== fbIndex) };
+    setMenus(items);
+  };
+
+  const addChannel = () => setRequiredChannels([...requiredChannels, { ...DEFAULT_CHANNEL }]);
+
+  const updateChannel = (index, field, value) => {
+    setRequiredChannels(requiredChannels.map((c, i) => (i === index ? { ...c, [field]: value } : c)));
+  };
+
+  const removeChannel = (index) => setRequiredChannels(requiredChannels.filter((_, i) => i !== index));
+
   const save = async () => {
     setSaving(true);
     try {
-      const payload = { welcomeText, botMenus: menus.map(({ text, actionId, order, row }) => ({ text, actionId, order, row })) };
+      const payload = {
+        welcomeText,
+        botMenus: menus.map(({ text, actionId, order, row, type, messageText, followUpButtons }) => ({
+          text, actionId, order, row, type, messageText, followUpButtons,
+        })),
+        channelGateEnabled,
+        requiredChannels,
+      };
       await api.put('/enterprise/bot-config', payload);
       toast.success('Bot config saved');
     } catch (err) {
@@ -165,28 +208,75 @@ export default function BotBuilder() {
                     {menus.map((btn, index) => (
                       <Draggable key={btn.actionId} draggableId={btn.actionId} index={index}>
                         {(p) => (
-                          <div ref={p.innerRef} {...p.draggableProps} className="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
-                            <div {...p.dragHandleProps} className="text-gray-500 hover:text-gray-300 cursor-grab active:cursor-grabbing">
-                              <GripVertical className="w-4 h-4" />
+                          <div ref={p.innerRef} {...p.draggableProps} className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50 space-y-2">
+                            <div className="flex items-center gap-3">
+                              <div {...p.dragHandleProps} className="text-gray-500 hover:text-gray-300 cursor-grab active:cursor-grabbing">
+                                <GripVertical className="w-4 h-4" />
+                              </div>
+                              <input
+                                className="input flex-1"
+                                value={btn.text}
+                                onChange={(e) => updateMenuField(index, 'text', e.target.value)}
+                                placeholder="Button text"
+                              />
+                              <select
+                                className="input w-28"
+                                value={btn.type || 'builtin'}
+                                onChange={(e) => updateMenuField(index, 'type', e.target.value)}
+                                title="Built-in actions map to existing bot handlers; custom actions show your own message + follow-up buttons."
+                              >
+                                <option value="builtin">Built-in</option>
+                                <option value="custom">Custom</option>
+                              </select>
+                              <input
+                                className="input w-20 text-center"
+                                type="number"
+                                min={0}
+                                value={btn.row ?? 0}
+                                onChange={(e) => updateMenuField(index, 'row', Math.max(0, parseInt(e.target.value) || 0))}
+                                placeholder="Row"
+                                title="Row number"
+                              />
+                              <button onClick={() => removeButton(index)} className="text-red-400 hover:text-red-300 transition-colors p-1">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
-                            <input
-                              className="input flex-1"
-                              value={btn.text}
-                              onChange={(e) => updateMenuField(index, 'text', e.target.value)}
-                              placeholder="Button text"
-                            />
-                            <input
-                              className="input w-20 text-center"
-                              type="number"
-                              min={0}
-                              value={btn.row ?? 0}
-                              onChange={(e) => updateMenuField(index, 'row', Math.max(0, parseInt(e.target.value) || 0))}
-                              placeholder="Row"
-                              title="Row number"
-                            />
-                            <button onClick={() => removeButton(index)} className="text-red-400 hover:text-red-300 transition-colors p-1">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+
+                            {btn.type === 'custom' && (
+                              <div className="pl-7 space-y-2 border-t border-gray-700/50 pt-2">
+                                <textarea
+                                  className="input min-h-[60px] resize-y text-sm"
+                                  value={btn.messageText || ''}
+                                  onChange={(e) => updateMenuField(index, 'messageText', e.target.value)}
+                                  placeholder="Message shown when this button is tapped..."
+                                />
+                                <div className="space-y-1.5">
+                                  {(btn.followUpButtons || []).map((fb, fbIndex) => (
+                                    <div key={fbIndex} className="flex items-center gap-2">
+                                      <input
+                                        className="input flex-1 text-sm"
+                                        value={fb.text}
+                                        onChange={(e) => updateFollowUpButton(index, fbIndex, 'text', e.target.value)}
+                                        placeholder="Follow-up button text"
+                                      />
+                                      <input
+                                        className="input flex-1 text-sm"
+                                        value={fb.actionId}
+                                        onChange={(e) => updateFollowUpButton(index, fbIndex, 'actionId', e.target.value)}
+                                        placeholder="actionId (e.g. buy_renew or another custom id)"
+                                      />
+                                      <button onClick={() => removeFollowUpButton(index, fbIndex)} className="text-red-400 hover:text-red-300 p-1">
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                                <button onClick={() => addFollowUpButton(index)} className="btn-secondary text-xs py-1 px-2">
+                                  <Plus className="w-3 h-3" />
+                                  Add Follow-up Button
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </Draggable>
@@ -199,6 +289,58 @@ export default function BotBuilder() {
 
             {menus.length === 0 && (
               <p className="text-center text-gray-500 py-8 text-sm">No buttons yet. Click "Add Button" to start.</p>
+            )}
+          </div>
+
+          <div className="card">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
+                <Lock className="w-4 h-4 text-primary-400" />
+                Channel-Join Gate
+              </h2>
+              <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={channelGateEnabled}
+                  onChange={(e) => setChannelGateEnabled(e.target.checked)}
+                />
+                Require channel membership
+              </label>
+            </div>
+
+            {channelGateEnabled && (
+              <div className="space-y-2">
+                {requiredChannels.map((channel, index) => (
+                  <div key={index} className="flex items-center gap-2 bg-gray-800/50 rounded-lg p-2 border border-gray-700/50">
+                    <Radio className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                    <input
+                      className="input flex-1 text-sm"
+                      value={channel.chatId}
+                      onChange={(e) => updateChannel(index, 'chatId', e.target.value)}
+                      placeholder="Chat ID (e.g. @mychannel or -100123456789)"
+                    />
+                    <input
+                      className="input flex-1 text-sm"
+                      value={channel.title}
+                      onChange={(e) => updateChannel(index, 'title', e.target.value)}
+                      placeholder="Display title"
+                    />
+                    <input
+                      className="input flex-1 text-sm"
+                      value={channel.inviteLink}
+                      onChange={(e) => updateChannel(index, 'inviteLink', e.target.value)}
+                      placeholder="Invite link (https://t.me/...)"
+                    />
+                    <button onClick={() => removeChannel(index)} className="text-red-400 hover:text-red-300 p-1">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                <button onClick={addChannel} className="btn-secondary text-xs py-1.5 px-3">
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Required Channel
+                </button>
+              </div>
             )}
           </div>
         </div>

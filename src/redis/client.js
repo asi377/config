@@ -39,6 +39,11 @@ class RedisClient {
     return val ? JSON.parse(val) : null;
   }
 
+  async del(key) {
+    if (!this.connected) return;
+    await this.client.del(key);
+  }
+
   async disconnect() {
     if (this.client) await this.client.quit();
     this.connected = false;
