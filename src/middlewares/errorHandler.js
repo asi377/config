@@ -1,10 +1,17 @@
-export default function errorHandler(err, req, res, next) {
-  const status = err.status || 500;
-  const message = err.message || 'Internal Server Error';
+import { AppError } from '../shared/errors.js';
+import logger from '../config/logger.js';
 
-  res.status(status).json({
+export default function errorHandler(err, req, res, _next) {
+  if (err instanceof AppError) {
+    return res.status(err.statusCode).json({
+      success: false,
+      error: err.message,
+    });
+  }
+
+  logger.error({ err, method: req.method, url: req.originalUrl }, 'Unhandled error');
+  res.status(500).json({
     success: false,
-    error: message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+    error: 'Internal server error',
   });
 }
