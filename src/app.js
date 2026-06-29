@@ -88,7 +88,7 @@ export async function createApp(httpServer) {
   app.use(routes);
 
   // Admin panel catch-all (for React Router)
-  app.get('/admin*', (req, res) => {
+  app.get('/admin/*splat', (req, res) => {
     res.sendFile(process.cwd() + '/public/admin/index.html');
   });
 

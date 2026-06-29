@@ -14,3 +14,17 @@ export function jwtAuth(req, res, next) {
     res.status(401).json({ error: 'Invalid token' });
   }
 }
+
+export function optionalJwtAuth(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return next();
+
+  try {
+    const decoded = jwt.verify(token, config.jwt.secret);
+    req.adminId = decoded.adminId;
+    req.admin = decoded;
+  } catch {
+    // Invalid/expired token on an optional route: proceed unauthenticated.
+  }
+  next();
+}

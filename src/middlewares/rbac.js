@@ -19,3 +19,15 @@ export function requirePermission(requiredPerm) {
     res.status(403).json({ error: 'Insufficient permissions' });
   };
 }
+
+export function requireRole(allowedRoles) {
+  return (req, res, next) => {
+    if (!req.admin) return res.status(401).json({ error: 'Unauthorized' });
+
+    if (allowedRoles.includes(req.admin.role)) {
+      return next();
+    }
+
+    res.status(403).json({ error: 'Insufficient permissions' });
+  };
+}

@@ -1,5 +1,7 @@
+import { randomUUID } from 'crypto';
+
 export function correlationMiddleware(req, res, next) {
-  req.correlationId = req.headers['x-correlation-id'] || require('crypto').randomUUID();
+  req.correlationId = req.headers['x-correlation-id'] || randomUUID();
   res.setHeader('x-correlation-id', req.correlationId);
   next();
 }
