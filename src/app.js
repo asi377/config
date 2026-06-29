@@ -59,7 +59,8 @@ export async function createApp(httpServer) {
     credentials: true,
   }));
 
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
   app.use(cookieParser());
   app.use(requestLogger);
   app.use(correlationMiddleware);
@@ -67,6 +68,15 @@ export async function createApp(httpServer) {
 
   // Rate limiter on all /api routes
   app.use('/api', createRateLimiter({ windowMs: 60000, max: 200 }));
+
+  // Static files for admin panel
+  app.use(express.static('public'));
+  app.use('/admin', express.static('public/admin'));
+
+  // Health check
+  app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date() });
+  });
 
   // Prometheus metrics
   app.get('/metrics', metricsEndpoint);
@@ -76,6 +86,11 @@ export async function createApp(httpServer) {
 
   // Main routes
   app.use(routes);
+
+  // Admin panel catch-all (for React Router)
+  app.get('/admin*', (req, res) => {
+    res.sendFile(process.cwd() + '/public/admin/index.html');
+  });
 
   // Attach WebSocket servers to HTTP server
   if (httpServer) {

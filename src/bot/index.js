@@ -51,6 +51,10 @@ class BotMessageQueue {
 
   registerWorker() {
     const worker = BullMQManager.createWorker('telegram-out', async (job) => {
+      if (job.name === 'broadcast') {
+        return BroadcastService.processBroadcastJob(this.bot, job.data);
+      }
+
       const { chatId, text, photo, document, extra } = job.data;
       try {
         if (text) await this.bot.telegram.sendMessage(chatId, text, extra);
@@ -117,6 +121,7 @@ export function createBot() {
   bot.action('admin_back',           adminController.handleAdminBack);
   bot.action('admin_dashboard',      adminController.handleAdminDashboard);
   bot.action('admin_metrics',        adminController.handleAdminMetrics);
+  bot.action('admin_broadcast_menu', adminController.handleAdminBroadcastMenu);
   bot.action('admin_users',          adminController.handleAdminUsers);
   bot.action('admin_user_reset_all', adminController.handleAdminUserResetAll);
   bot.action('admin_servers',        adminController.handleAdminServers);
@@ -145,8 +150,6 @@ export function createBot() {
     const handled = await adminController.handleBroadcastText(ctx);
     if (!handled) return next();
   });
-
-  BroadcastService.registerWorker(bot);
 
   logger.info('[bot] All handlers registered');
   return bot;

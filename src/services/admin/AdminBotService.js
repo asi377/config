@@ -8,8 +8,7 @@ class AdminBotService extends BaseService {
       const users = await UserRepository.findMany({ telegramId: { $exists: true } });
       return users.map((u) => u.telegramId);
     }
-    const status = audienceType === 'active' ? 'active' : 'expired';
-    const ids = await SubscriptionRepository.getOwnerIdsByStatus(status);
+    const ids = await SubscriptionRepository.getOwnerIdsByStatus(audienceType);
     const users = await UserRepository.findMany({ _id: { $in: ids }, telegramId: { $exists: true } });
     return users.map((u) => u.telegramId);
   });

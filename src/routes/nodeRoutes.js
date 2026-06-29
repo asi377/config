@@ -4,7 +4,9 @@ import { fileURLToPath } from 'url';
 import { nodeAuth, nodeRegistrationAuth } from '../middlewares/nodeAuth.js';
 import { requirePermission } from '../middlewares/rbac.js';
 import { jwtAuth } from '../middlewares/jwtAuth.js';
-import NodeManagerService from '../services/infra/NodeManagerService.js';
+import NodeRegistrationService from '../services/infra/NodeRegistrationService.js';
+import NodeHealthService from '../services/infra/NodeHealthService.js';
+import NodeCommandService from '../services/infra/NodeCommandService.js';
 import HealthMonitorService from '../services/infra/HealthMonitorService.js';
 import LoadBalancerService from '../services/infra/LoadBalancerService.js';
 import ConfigGeneratorService from '../services/infra/ConfigGeneratorService.js';
@@ -22,7 +24,7 @@ router.get('/node-agent/bootstrap.sh', (_req, res) => {
 
 router.post('/nodes/register', nodeRegistrationAuth, async (req, res, next) => {
   try {
-    const result = await NodeManagerService.registerNode({
+    const result = await NodeRegistrationService.registerNode({
       ...req.body,
       isBootstrapRegistration: req.isBootstrapRegistration,
     });
@@ -32,28 +34,28 @@ router.post('/nodes/register', nodeRegistrationAuth, async (req, res, next) => {
 
 router.post('/nodes/heartbeat', nodeAuth, async (req, res, next) => {
   try {
-    const result = await NodeManagerService.processHeartbeat(req.body);
+    const result = await NodeHealthService.processHeartbeat(req.body);
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 });
 
 router.post('/nodes/shutdown', nodeAuth, async (req, res, next) => {
   try {
-    const result = await NodeManagerService.handleShutdown(req.body);
+    const result = await NodeHealthService.handleShutdown(req.body);
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 });
 
 router.post('/nodes/sync-users', nodeAuth, async (req, res, next) => {
   try {
-    const result = await NodeManagerService.syncUsers(req.body);
+    const result = await NodeHealthService.syncUsers(req.body);
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 });
 
 router.post('/nodes/command-result', nodeAuth, async (req, res, next) => {
   try {
-    const result = await NodeManagerService.reportCommandResult(req.body);
+    const result = await NodeCommandService.reportCommandResult(req.body);
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 });
@@ -62,29 +64,29 @@ router.post('/nodes/command-result', nodeAuth, async (req, res, next) => {
 
 router.get('/nodes', jwtAuth, requirePermission('servers.read'), async (req, res, next) => {
   try {
-    const summary = await NodeManagerService.getInfraSummary();
+    const summary = await NodeHealthService.getInfraSummary();
     res.json({ success: true, data: summary });
   } catch (err) { next(err); }
 });
 
 router.post('/nodes/servers', jwtAuth, requirePermission('servers.write'), async (req, res, next) => {
   try {
-    const server = await NodeManagerService.addServer(req.body);
-    const bootstrap = NodeManagerService._generateBootstrapCommand(server);
+    const server = await NodeRegistrationService.addServer(req.body);
+    const bootstrap = NodeRegistrationService._generateBootstrapCommand(server);
     res.status(201).json({ success: true, data: { server, bootstrap } });
   } catch (err) { next(err); }
 });
 
 router.get('/nodes/servers/:id', jwtAuth, requirePermission('servers.read'), async (req, res, next) => {
   try {
-    const status = await NodeManagerService.getServerStatus(req.params.id);
+    const status = await NodeHealthService.getServerStatus(req.params.id);
     res.json({ success: true, data: status });
   } catch (err) { next(err); }
 });
 
 router.delete('/nodes/servers/:id', jwtAuth, requirePermission('servers.delete'), async (req, res, next) => {
   try {
-    const result = await NodeManagerService.removeServer(req.params.id);
+    const result = await NodeRegistrationService.removeServer(req.params.id);
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 });

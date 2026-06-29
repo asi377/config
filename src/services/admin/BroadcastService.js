@@ -1,19 +1,13 @@
 import logger from '../../config/logger.js';
+import AdminBotService from './AdminBotService.js';
 
 class BroadcastService {
-  static registerWorker(bot) {
-    const BullMQManager = require('../../queue/bullmq.js').default;
-    const queue = BullMQManager.getQueue('telegram-out');
-
-    if (queue) {
-      const worker = BullMQManager.createWorker('telegram-out', async (job) => {
-        const { text, targetRole } = job.data;
-        if (job.data.type === 'broadcast') {
-          logger.info({ targetRole }, '[broadcast] Sending broadcast message');
-          // Implementation would send to all users matching role
-        }
-      });
-    }
+  static async processBroadcastJob(bot, data) {
+    const { text, targetRole } = data;
+    const telegramIds = await AdminBotService.getBroadcastTargets(targetRole || 'all');
+    const result = await AdminBotService.sendBroadcast(bot, telegramIds, text);
+    logger.info({ targetRole, ...result }, '[broadcast] Broadcast complete');
+    return result;
   }
 }
 

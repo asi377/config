@@ -6,29 +6,15 @@ import api from '../api/client';
 function AddServerModal({ open, onClose }) {
   const [form, setForm] = useState({ name: '', ipAddress: '', port: 443, xrayApiPort: 10085, maxCapacity: 100, region: 'unknown' });
   const [submitting, setSubmitting] = useState(false);
-
-  const bootstrapScript = `#!/bin/bash
-# HORNET Node Bootstrap Script
-set -e
-
-SERVER_NAME="${form.name || 'my-node'}"
-SERVER_IP="${form.ipAddress || '<SERVER_IP>'}"
-API_URL="${window.location.origin}"
-
-curl -fsSL https://get.hornet-node.sh | bash -s -- \\
-  --name "$SERVER_NAME" \\
-  --api-url "$API_URL" \\
-  --join-token "$(Math.random().toString(36).slice(2))"
-
-echo "Node joined the fleet. Check the panel for status."`;
+  const [bootstrapScript, setBootstrapScript] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.post('/enterprise/servers', form);
+      const res = await api.post('/nodes/servers', form);
+      setBootstrapScript(res.data.data.bootstrap);
       toast.success('Server added');
-      onClose();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to add server');
     } finally {
@@ -81,17 +67,19 @@ echo "Node joined the fleet. Check the panel for status."`;
           </div>
         </form>
 
-        <div className="border-t border-gray-800 pt-4">
-          <h3 className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-primary-400" />
-            Bootstrap Script
-          </h3>
-          <p className="text-xs text-gray-500 mb-2">Run this on your VPS to connect it to the panel:</p>
-          <CopyButton text={bootstrapScript} />
-          <pre className="bg-gray-950 rounded-lg p-4 text-xs text-gray-300 overflow-x-auto max-h-48 overflow-y-auto border border-gray-800">
-            <code>{bootstrapScript}</code>
-          </pre>
-        </div>
+        {bootstrapScript && (
+          <div className="border-t border-gray-800 pt-4">
+            <h3 className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2">
+              <Terminal className="w-4 h-4 text-primary-400" />
+              Bootstrap Command
+            </h3>
+            <p className="text-xs text-gray-500 mb-2">Run this on your VPS to connect it to the panel:</p>
+            <CopyButton text={bootstrapScript} />
+            <pre className="bg-gray-950 rounded-lg p-4 text-xs text-gray-300 overflow-x-auto max-h-48 overflow-y-auto border border-gray-800">
+              <code>{bootstrapScript}</code>
+            </pre>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -226,8 +214,8 @@ export default function ServerFleet() {
 
   const fetch = useCallback(async () => {
     try {
-      const res = await api.get('/enterprise/servers');
-      setServers(res.data.data);
+      const res = await api.get('/nodes');
+      setServers(res.data.data.servers || []);
     } catch {
       toast.error('Failed to load servers');
     } finally {
@@ -240,7 +228,7 @@ export default function ServerFleet() {
   const handleDelete = async (id) => {
     if (!confirm('Delete this server?')) return;
     try {
-      await api.delete(`/enterprise/servers/${id}`);
+      await api.delete(`/nodes/servers/${id}`);
       toast.success('Server deleted');
       fetch();
     } catch {

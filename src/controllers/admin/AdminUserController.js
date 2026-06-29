@@ -38,6 +38,10 @@ export async function updateUserRole(req, res, next) {
       return res.status(400).json({ success: false, error: 'Invalid role' });
     }
 
+    if (role === 'superadmin' && req.admin?.role !== 'superadmin') {
+      return res.status(403).json({ success: false, error: 'Only a superadmin can grant the superadmin role' });
+    }
+
     const user = await User.findByIdAndUpdate(req.params.id, { $set: { role } }, { new: true });
     if (!user) return res.status(404).json({ success: false, error: 'User not found' });
 

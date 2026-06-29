@@ -143,9 +143,10 @@ export async function nodeRegistrationAuth(req, _res, next) {
   if (existing) {
     req.nodeServer = existing;
     req.nodeServerId = existing._id;
+    return next();
   }
 
-  next();
+  return next(new AuthError('Invalid bootstrap token or unknown node'));
 }
 
 export async function optionalNodeAuth(req, _res, next) {

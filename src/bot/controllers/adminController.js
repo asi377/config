@@ -1,4 +1,5 @@
 import logger from '../../config/logger.js';
+import { generateBroadcastKeyboard } from '../keyboards.js';
 
 const ADMIN_ROLE_CHECK = async (ctx) => {
   const Admin = (await import('../../models/Admin.js')).default;
@@ -17,6 +18,7 @@ export async function adminCommand(ctx) {
         [{ text: '👥 Users', callback_data: 'admin_users' }],
         [{ text: '📋 Plans', callback_data: 'admin_plans' }],
         [{ text: '💰 Finance', callback_data: 'admin_finance' }],
+        [{ text: '📢 Broadcast', callback_data: 'admin_broadcast_menu' }],
       ],
     },
   });
@@ -153,8 +155,20 @@ export async function handleAdminAddPromo(ctx) {
   await ctx.reply('➕ Add Promo Code');
 }
 
+export async function handleAdminBroadcastMenu(ctx) {
+  const isAdmin = await ADMIN_ROLE_CHECK(ctx);
+  if (!isAdmin) return ctx.reply('❌ Unauthorized');
+
+  await ctx.editMessageText('📢 Choose broadcast audience:', generateBroadcastKeyboard());
+}
+
 export async function handleAdminBroadcast(ctx) {
-  await ctx.reply('📢 Broadcast Message');
+  const isAdmin = await ADMIN_ROLE_CHECK(ctx);
+  if (!isAdmin) return ctx.reply('❌ Unauthorized');
+
+  const targetRole = ctx.match[1];
+  ctx.session.awaitingBroadcast = targetRole;
+  await ctx.editMessageText(`📢 Send the message text to broadcast to: ${targetRole}`);
 }
 
 export async function handleAdminPlanToggle(ctx) {
@@ -174,6 +188,20 @@ export async function handleReceiptAction(ctx) {
 }
 
 export async function handleBroadcastText(ctx) {
-  // Return false to let other handlers process
-  return false;
+  const targetRole = ctx.session?.awaitingBroadcast;
+  if (!targetRole) return false;
+
+  const isAdmin = await ADMIN_ROLE_CHECK(ctx);
+  if (!isAdmin) {
+    delete ctx.session.awaitingBroadcast;
+    return false;
+  }
+
+  delete ctx.session.awaitingBroadcast;
+
+  const BullMQManager = (await import('../../queue/bullmq.js')).default;
+  await BullMQManager.enqueue('telegram-out', 'broadcast', { text: ctx.message.text, targetRole });
+
+  await ctx.reply(`✅ Broadcast queued for audience: ${targetRole}`);
+  return true;
 }
