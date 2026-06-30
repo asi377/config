@@ -19,9 +19,20 @@ const receiptSchema = new mongoose.Schema(
       min: [0, 'Amount cannot be negative'],
     },
     photoFileId: {
+      // Optional: auto card-to-card ("I paid") receipts have no photo and are
+      // matched/approved purely from the forwarded bank SMS. Manual-upload
+      // receipts still carry a photo.
       type: String,
-      required: [true, 'Receipt photo is required'],
+      default: null,
       trim: true,
+    },
+    method: {
+      // 'auto'  → user tapped "I paid", awaiting SMS match
+      // 'manual'→ user uploaded a receipt photo, awaiting admin review
+      type: String,
+      enum: ['auto', 'manual'],
+      default: 'manual',
+      index: true,
     },
     status: {
       type: String,
@@ -30,6 +41,7 @@ const receiptSchema = new mongoose.Schema(
           'pending',
           'pending_payment',
           'approved',
+          'auto_approved',
           'rejected',
           'sms_matched',
           'paid',

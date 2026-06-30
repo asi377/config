@@ -8,7 +8,7 @@ import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename="/admin">
       <AuthProvider>
         <App />
         <Toaster position="top-right" toastOptions={{ className: '!bg-gray-800 !text-gray-100 !border !border-gray-700' }} />

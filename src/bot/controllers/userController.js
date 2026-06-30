@@ -1,8 +1,7 @@
 import logger from '../../config/logger.js';
 import { t } from '../../utils/i18n.js';
-import { formatRials, formatRank, calculateRank } from '../utils.js';
+import { formatRials, formatBytes, formatRank, calculateRank } from '../utils.js';
 import {
-  mainMenuKeyboard,
   generatePlansKeyboard,
   generateClientPickerKeyboard,
   generateExtraDataKeyboard,
@@ -36,6 +35,16 @@ async function smartReply(ctx, text, extra) {
   return ctx.reply(text, extra);
 }
 
+/** Sends the persistent main-menu reply keyboard, including any admin-defined custom buttons. */
+async function sendMainMenu(ctx, title) {
+  const lang = ctx.lang || 'fa';
+  const { customButtonRows } = await import('../customButtons.js');
+  const customRows = await customButtonRows(lang);
+  await ctx.reply(title || t('main_menu_title', lang), {
+    reply_markup: mainReplyKeyboard(lang, customRows).reply_markup,
+  });
+}
+
 export async function startCommand(ctx) {
   try {
     const User = (await import('../../models/User.js')).default;
@@ -52,24 +61,8 @@ export async function startCommand(ctx) {
 
     const lang = ctx.lang || user.language || 'fa';
 
-    await ctx.reply(t('welcome_title', lang), {
-      reply_markup: mainReplyKeyboard(lang).reply_markup,
-    });
-
-    await ctx.msgQueue.sendMessage(
-      ctx.chat.id,
-      t('welcome_choose_option', lang),
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: t('btn_buy_subscription', lang), callback_data: 'buy_renew' }],
-            [{ text: t('btn_my_account', lang), callback_data: 'profile' }],
-            [{ text: t('btn_help', lang), callback_data: 'help' }],
-            [{ text: '🌐 Change Language', callback_data: 'change_language' }],
-          ],
-        },
-      },
-    );
+    // Single, persistent bottom keyboard is the whole main menu.
+    await sendMainMenu(ctx, `${t('welcome_title', lang)}\n\n${t('welcome_choose_option', lang)}`);
   } catch (err) {
     logger.error({ err }, '[bot] startCommand error');
     await ctx.reply(t('error_generic_request', ctx.lang));
@@ -77,10 +70,20 @@ export async function startCommand(ctx) {
 }
 
 export async function handleMainMenu(ctx) {
-  const lang = ctx.lang || 'fa';
-  await smartReply(ctx, t('main_menu_title', lang), {
-    reply_markup: mainMenuKeyboard(lang, ctx.user).reply_markup,
-  });
+  // Reply-keyboard is the main menu; just (re)show it. If we arrived here from
+  // an inline button, answer the callback so the spinner stops.
+  if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+  await sendMainMenu(ctx);
+}
+
+/**
+ * User-facing /restart: bail out of any stuck scene/flow and return to the
+ * main menu. (Admin process-restart is a separate command in index.js.)
+ */
+export async function handleRestart(ctx) {
+  try { if (ctx.scene?.current) await ctx.scene.leave(); } catch { /* ignore */ }
+  if (ctx.session) ctx.session.__scenes = {};
+  return handleMainMenu(ctx);
 }
 
 export async function handleProfile(ctx) {
@@ -122,23 +125,175 @@ export async function handleBuyRenew(ctx) {
   });
 }
 
+// status → i18n key for a localized, friendly status label
+const SUB_STATUS_KEYS = {
+  active: 'sub_status_active',
+  on_hold: 'sub_status_on_hold',
+  expired: 'sub_status_expired',
+  suspended: 'sub_status_suspended',
+  trial: 'sub_status_trial',
+  cancelled: 'sub_status_cancelled',
+  pending_payment: 'sub_status_pending_payment',
+  pending_shared_payment: 'sub_status_pending_payment',
+};
+
+function subStatusLabel(status, lang) {
+  return t(SUB_STATUS_KEYS[status] || 'sub_status_unknown', lang);
+}
+
 export async function handleMySubscriptions(ctx) {
   const lang = ctx.lang || 'fa';
+  if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+  const User = (await import('../../models/User.js')).default;
   const Subscription = (await import('../../models/Subscription.js')).default;
-  const subs = await Subscription.find({
-    ownerId: (await (await import('../../models/User.js')).default.findOne({ telegramId: String(ctx.from.id) }))._id,
-  });
-  const text = subs.length > 0
-    ? `${t('subscriptions_title', lang)}\n${subs.map((s) => t('subscriptions_status_line', lang, { status: s.status })).join('\n')}`
-    : t('no_active_subscriptions', lang);
+  const user = await User.findOne({ telegramId: String(ctx.from.id) });
+  const subs = await Subscription.find({ ownerId: user._id })
+    .populate('planId', 'title')
+    .sort({ createdAt: -1 })
+    .lean();
 
-  await smartReply(ctx, text, {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: t('btn_back', lang), callback_data: 'main_menu' }],
-      ],
-    },
+  if (!subs.length) {
+    await smartReply(ctx, t('no_active_subscriptions', lang), {
+      reply_markup: { inline_keyboard: [[{ text: t('btn_buy_renew', lang), callback_data: 'buy_renew' }]] },
+    });
+    return;
+  }
+
+  const rows = subs.map((s) => [{
+    text: `${s.planId?.title || t('sub_plan_unknown', lang)} — ${subStatusLabel(s.status, lang)}`,
+    callback_data: `sub_detail_${s._id}`,
+  }]);
+
+  await smartReply(ctx, t('subscriptions_list_title', lang), {
+    reply_markup: { inline_keyboard: rows },
   });
+}
+
+/**
+ * Builds the rich detail text for one subscription: plan, status, remaining
+ * days, volume (used / total / remaining, or "unlimited"), and the sub link.
+ */
+async function buildSubscriptionDetail(sub, lang) {
+  const TunnelConfig = (await import('../../models/TunnelConfig.js')).default;
+  const now = Date.now();
+  const remainingDays = sub.expireDate
+    ? Math.max(0, Math.ceil((new Date(sub.expireDate).getTime() - now) / 86400000))
+    : 0;
+
+  // Convention: totalVolumeBytes <= 0 means an unlimited plan.
+  const unlimited = !sub.totalVolumeBytes || sub.totalVolumeBytes <= 0;
+  const volumeLine = unlimited
+    ? t('sub_volume_unlimited', lang)
+    : t('sub_volume_value', lang, {
+        used: formatBytes(sub.usedVolumeBytes || 0, lang),
+        total: formatBytes(sub.totalVolumeBytes, lang),
+        remaining: formatBytes(Math.max(0, sub.totalVolumeBytes - (sub.usedVolumeBytes || 0)), lang),
+      });
+
+  const tunnel = await TunnelConfig.findOne({ subscriptionId: sub._id, isActive: true })
+    .sort({ createdAt: -1 }).lean();
+  const link = tunnel ? `${config.backendUrl}/sub/${tunnel.uuid}` : t('sub_no_config_yet', lang);
+
+  return [
+    t('subscription_detail_title', lang),
+    '',
+    t('sub_field_plan', lang, { plan: sub.planId?.title || t('sub_plan_unknown', lang) }),
+    t('sub_field_status', lang, { status: subStatusLabel(sub.status, lang) }),
+    t('sub_field_remaining_days', lang, { days: remainingDays }),
+    t('sub_field_volume', lang, { volume: volumeLine }),
+    '',
+    t('sub_field_link', lang, { link }),
+  ].join('\n');
+}
+
+export async function handleSubscriptionDetail(ctx) {
+  const lang = ctx.lang || 'fa';
+  if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+  const subId = ctx.match[1];
+  try {
+    const Subscription = (await import('../../models/Subscription.js')).default;
+    const User = (await import('../../models/User.js')).default;
+    const user = await User.findOne({ telegramId: String(ctx.from.id) });
+    const sub = await Subscription.findOne({ _id: subId, ownerId: user._id }).populate('planId', 'title');
+    if (!sub) {
+      await ctx.reply(t('error_not_found', lang, { resource: 'Subscription' }));
+      return;
+    }
+
+    const text = await buildSubscriptionDetail(sub, lang);
+    const rows = [];
+    if (sub.status === 'active') {
+      rows.push([{ text: t('btn_get_config', lang), callback_data: `config_pick_${sub._id}` }]);
+      rows.push([{ text: t('btn_change_config', lang), callback_data: `sub_rotate_${sub._id}` }]);
+    } else if (sub.status === 'expired') {
+      rows.push([{ text: t('btn_renew_subscription', lang), callback_data: 'buy_renew' }]);
+    }
+    rows.push([{ text: t('btn_back', lang), callback_data: 'my_subscriptions' }]);
+
+    await smartReply(ctx, text, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: rows },
+    });
+  } catch (err) {
+    logger.error({ err, subId }, '[bot] handleSubscriptionDetail error');
+    await ctx.reply(t('error_generic_request', lang));
+  }
+}
+
+/** Shows the client picker for a specific subscription (from the detail view). */
+export async function handleConfigPick(ctx) {
+  const lang = ctx.lang || 'fa';
+  if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+  const subId = ctx.match[1];
+  await ctx.reply(t('config_pick_client', lang), {
+    reply_markup: generateClientPickerKeyboard(lang, subId).reply_markup,
+  });
+}
+
+/**
+ * Rotates (changes) the config: deactivates the current tunnel(s), provisions a
+ * fresh UUID, and queues remove/create commands to the node-agent. Returns the
+ * new subscription link to the user.
+ */
+export async function handleSubRotateConfig(ctx) {
+  const lang = ctx.lang || 'fa';
+  if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+  const subId = ctx.match[1];
+  try {
+    const Subscription = (await import('../../models/Subscription.js')).default;
+    const TunnelConfig = (await import('../../models/TunnelConfig.js')).default;
+    const User = (await import('../../models/User.js')).default;
+    const NodeCommandService = (await import('../../services/infra/NodeCommandService.js')).default;
+    const user = await User.findOne({ telegramId: String(ctx.from.id) });
+    const sub = await Subscription.findOne({ _id: subId, ownerId: user._id, status: 'active' }).populate('planId');
+    if (!sub) {
+      await ctx.reply(t('create_sublink_no_active_subscription', lang));
+      return;
+    }
+
+    // Deactivate existing configs and ask the node to remove their users.
+    const oldConfigs = await TunnelConfig.find({ subscriptionId: sub._id, isActive: true });
+    for (const old of oldConfigs) {
+      old.isActive = false;
+      await old.save();
+      if (sub.serverId) {
+        await NodeCommandService.executeNodeCommand(sub.serverId, 'remove_user', {
+          email: `user-${old.uuid}@hornet.node`,
+        });
+      }
+    }
+
+    // Provision a fresh tunnel + create_user command.
+    const { tunnelConfig } = await ProvisioningService.provisionTunnelOnNode(sub, sub.planId, user);
+    const subLink = `${config.backendUrl}/sub/${tunnelConfig.uuid}`;
+
+    await ctx.reply(t('config_rotated', lang, { link: subLink }), {
+      reply_markup: generateClientPickerKeyboard(lang, sub._id).reply_markup,
+    });
+  } catch (err) {
+    logger.error({ err, subId }, '[bot] handleSubRotateConfig error');
+    await ctx.reply(t('error_generic_request', lang));
+  }
 }
 
 export async function handleCreateSubLink(ctx) {
@@ -246,6 +401,13 @@ export async function handleConnectionGuide(ctx) {
 export async function handleFaq(ctx) {
   const lang = ctx.lang || 'fa';
   await ctx.reply(t('faq_message', lang));
+}
+
+/** Comprehensive bot usage guide (/help). */
+export async function handleHelp(ctx) {
+  const lang = ctx.lang || 'fa';
+  if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+  await ctx.reply(t('help_message', lang), { parse_mode: 'Markdown' });
 }
 
 export async function handlePricingList(ctx) {
@@ -438,8 +600,66 @@ export async function handleCardPayment(ctx) {
   }
 }
 
+/**
+ * Auto card-to-card ("I paid"): shows the card + an exact, per-order unique
+ * amount and creates a photo-less pending Receipt (method:'auto'). The user
+ * pays, then taps "I paid"; when the bank SMS for that unique amount is
+ * forwarded to the webhook, processSmsWebhook auto-approves and provisions —
+ * no receipt photo, no admin step.
+ */
 export async function handleAutoCardPayment(ctx) {
-  await handleCardPayment(ctx);
+  const lang = ctx.lang || 'fa';
+  const planId = ctx.match[1];
+  if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+  try {
+    const plan = await PlanRepository.findById(planId);
+    if (!plan) {
+      await ctx.reply(t('error_not_found', lang, { resource: 'Plan' }));
+      return;
+    }
+
+    const User = (await import('../../models/User.js')).default;
+    const Receipt = (await import('../../models/Receipt.js')).default;
+    const user = await User.findOne({ telegramId: String(ctx.from.id) });
+
+    const uniqueAmount = await PaymentService.generateUniqueAmount(plan.basePrice);
+    const cardNumber = await SettingRepository.get('payment.cardNumber', config.cardNumber);
+
+    const receipt = await Receipt.create({
+      userId: user._id,
+      planId,
+      amount: uniqueAmount,
+      method: 'auto',
+      status: 'pending',
+      gateway: 'card_auto',
+    });
+
+    await ctx.reply(t('card_payment_instructions', lang, {
+      cardNumber,
+      amount: formatRials(uniqueAmount, lang),
+    }), {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: t('btn_i_paid', lang), callback_data: `ipaid_${receipt._id}` }],
+          [{ text: t('btn_upload_receipt_manual', lang), callback_data: `cardpay_${planId}` }],
+          [{ text: t('btn_cancel', lang), callback_data: 'main_menu' }],
+        ],
+      },
+    });
+  } catch (err) {
+    logger.error({ err, planId }, '[bot] handleAutoCardPayment error');
+    await ctx.reply(t('error_generic_request', lang));
+  }
+}
+
+/**
+ * The user confirms they transferred the money. We just acknowledge — actual
+ * confirmation happens automatically when the matching bank SMS arrives.
+ */
+export async function handleIPaid(ctx) {
+  const lang = ctx.lang || 'fa';
+  if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+  await smartReply(ctx, t('i_paid_ack', lang));
 }
 
 const CLIENT_INSTRUCTION_KEYS = {

@@ -41,10 +41,16 @@ class TunnelService extends BaseService {
           ? new Date(Date.now() + 86400000)
           : undefined;
 
+        const allowed = plan.allowedProtocols && plan.allowedProtocols.length
+          ? plan.allowedProtocols
+          : ['vless'];
+        const protocol = allowed.includes('vless') ? 'vless' : allowed[0];
+
         return TunnelConfigRepository.create({
           subscriptionId: sub._id,
           uuid: crypto.randomUUID(),
           name: configName,
+          protocol,
           allocatedQuotaBytes,
           usedQuotaBytes: 0,
           isGuestLink: isGuest,

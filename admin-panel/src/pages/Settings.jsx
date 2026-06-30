@@ -28,9 +28,71 @@ export default function Settings() {
   const [cardNumber, setCardNumber] = useState('5022-2910-XXXX-XXXX');
   const [autoApproveSaving, setAutoApproveSaving] = useState(false);
 
+  // SMS regex builder / tester (auto card-to-card)
+  const [smsSample, setSmsSample] = useState('');
+  const [smsKnownAmount, setSmsKnownAmount] = useState('');
+  const [smsRegex, setSmsRegex] = useState('');
+  const [smsDetected, setSmsDetected] = useState(null);
+  const [smsBuilding, setSmsBuilding] = useState(false);
+  const [smsSaving, setSmsSaving] = useState(false);
+  const [smsTestSample, setSmsTestSample] = useState('');
+  const [smsTestResult, setSmsTestResult] = useState(null);
+  const [smsTesting, setSmsTesting] = useState(false);
+
   useEffect(() => {
     fetchSettings();
+    fetchSmsRegex();
   }, []);
+
+  const fetchSmsRegex = async () => {
+    try {
+      const res = await api.get('/admin/bot-config');
+      setSmsRegex(res.data?.data?.smsBankRegex || '');
+    } catch { /* non-fatal */ }
+  };
+
+  const handleBuildRegex = async () => {
+    if (!smsSample.trim()) { toast.error('Paste a sample SMS first'); return; }
+    try {
+      setSmsBuilding(true);
+      const res = await api.post('/admin/sms/build-regex', {
+        sample: smsSample,
+        amount: smsKnownAmount === '' ? undefined : Number(smsKnownAmount),
+      });
+      setSmsRegex(res.data.data.regex);
+      setSmsDetected(res.data.data.detectedAmount);
+      toast.success(`Detected amount: ${res.data.data.detectedAmount.toLocaleString()} — review & save`);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not build regex');
+    } finally {
+      setSmsBuilding(false);
+    }
+  };
+
+  const handleSaveRegex = async () => {
+    try {
+      setSmsSaving(true);
+      await api.put('/admin/bot-config', { smsBankRegex: smsRegex });
+      toast.success('SMS regex saved');
+    } catch (err) {
+      toast.error('Failed to save regex');
+    } finally {
+      setSmsSaving(false);
+    }
+  };
+
+  const handleTestRegex = async () => {
+    if (!smsTestSample.trim()) { toast.error('Paste a test SMS first'); return; }
+    try {
+      setSmsTesting(true);
+      const res = await api.post('/admin/sms/test', { sample: smsTestSample, regex: smsRegex });
+      setSmsTestResult(res.data.data);
+    } catch (err) {
+      toast.error('Test failed');
+    } finally {
+      setSmsTesting(false);
+    }
+  };
 
   const fetchSettings = async () => {
     try {
@@ -270,6 +332,83 @@ export default function Settings() {
           >
             {autoApproveSaving ? 'Saving...' : 'Save Payment Settings'}
           </button>
+        </div>
+      </div>
+
+      <div className="max-w-2xl">
+        <div className="card space-y-4">
+          <h2 className="text-xl font-semibold">SMS Regex / الگوی پیامک بانک</h2>
+          <p className="text-sm text-gray-400">
+            متن یک پیامک نمونه‌ی بانک را اینجا بچسبان و «ساخت Regex» را بزن. سیستم خودش مبلغ را
+            تشخیص می‌دهد و الگو می‌سازد؛ اگر مبلغ را اشتباه گرفت، مبلغ درست را در کادر «مبلغ» وارد
+            کن و دوباره بساز. سپس الگو را بررسی و ذخیره کن. (Paste a sample bank SMS, build, review, save.)
+          </p>
+
+          <div>
+            <label className="label">Sample SMS / متن نمونه پیامک</label>
+            <textarea
+              className="input min-h-[90px]"
+              placeholder="مثال: بانک ملی&#10;مبلغ 350,000 ریال به حساب شما واریز شد..."
+              value={smsSample}
+              onChange={(e) => setSmsSample(e.target.value)}
+            />
+          </div>
+
+          <div className="flex gap-2 items-end">
+            <div className="flex-1">
+              <label className="label">Known amount (optional) / مبلغ دقیق (اختیاری)</label>
+              <input
+                type="number"
+                className="input"
+                placeholder="350000"
+                value={smsKnownAmount}
+                onChange={(e) => setSmsKnownAmount(e.target.value)}
+              />
+            </div>
+            <button type="button" className="btn btn-secondary" onClick={handleBuildRegex} disabled={smsBuilding}>
+              {smsBuilding ? '...' : 'Build Regex / ساخت'}
+            </button>
+          </div>
+
+          {smsDetected != null && (
+            <p className="text-sm text-green-400">Detected amount: {Number(smsDetected).toLocaleString()}</p>
+          )}
+
+          <div>
+            <label className="label">Regex (editable) / الگوی نهایی</label>
+            <input
+              type="text"
+              className="input font-mono text-xs"
+              value={smsRegex}
+              onChange={(e) => setSmsRegex(e.target.value)}
+            />
+          </div>
+
+          <button type="button" className="btn btn-primary" onClick={handleSaveRegex} disabled={smsSaving}>
+            {smsSaving ? 'Saving...' : 'Save Regex / ذخیره الگو'}
+          </button>
+
+          <hr className="border-gray-700" />
+
+          <div>
+            <label className="label">Test SMS / تست با یک پیامک</label>
+            <textarea
+              className="input min-h-[70px]"
+              placeholder="یک پیامک دیگر برای تست بچسبان..."
+              value={smsTestSample}
+              onChange={(e) => setSmsTestSample(e.target.value)}
+            />
+          </div>
+          <button type="button" className="btn btn-secondary" onClick={handleTestRegex} disabled={smsTesting}>
+            {smsTesting ? '...' : 'Test / تست'}
+          </button>
+          {smsTestResult && (
+            <p className={`text-sm ${smsTestResult.matched ? 'text-green-400' : 'text-red-400'}`}>
+              {smsTestResult.matched
+                ? `✅ Extracted: ${Number(smsTestResult.extractedAmount).toLocaleString()}`
+                : '❌ No amount extracted — adjust the regex or sample.'}
+            </p>
+          )}
         </div>
       </div>
     </div>

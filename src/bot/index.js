@@ -17,6 +17,7 @@ import { languageMiddleware } from './middlewares/languageMiddleware.js';
 import { forceSubscribeMiddleware } from './middlewares/forceSubscribeMiddleware.js';
 import { handleForceSubscribeRecheck } from './controllers/forceSubscribeController.js';
 import { matchReplyButton } from './replyKeyboardRouter.js';
+import { matchCustomButton, renderCustomButton } from './customButtons.js';
 import { mainReplyKeyboard } from './keyboards.js';
 
 /**
@@ -106,15 +107,41 @@ export function createBot() {
   bot.use(languageMiddleware());
   bot.use(forceSubscribeMiddleware);
   bot.use(botRateLimit);
+
+  // ── Scene-escape guard (runs BEFORE the Stage) ───────────────────────────────
+  // If the user is stuck inside a scene/flow and taps a persistent menu button
+  // (or /start, /restart, /menu), drop the active scene so the press is handled
+  // as a normal navigation instead of being swallowed by the scene. This is what
+  // makes the bottom keyboard always work and removes dead-ends.
+  bot.use(async (ctx, next) => {
+    const txt = ctx.message?.text;
+    if (txt) {
+      const isMenuBtn = !!matchReplyButton(txt) || txt === '🌐 Change Language'
+        || !!(await matchCustomButton(txt));
+      const isEscapeCmd = /^\/(start|restart|menu)\b/.test(txt);
+      if ((isMenuBtn || isEscapeCmd) && ctx.session && ctx.session.__scenes) {
+        ctx.session.__scenes = {};
+      }
+    }
+    return next();
+  });
+
   bot.use(stage.middleware());
 
   // ── User commands ────────────────────────────────────────────────────────────
   bot.start(userController.startCommand);
+  bot.command('restart', userController.handleRestart);
+  bot.command('menu', userController.handleMainMenu);
+  bot.command('help', userController.handleHelp);
+  bot.action('help', userController.handleHelp);
 
   bot.action('main_menu',        userController.handleMainMenu);
   bot.action('profile',          userController.handleProfile);
   bot.action('buy_renew',        userController.handleBuyRenew);
   bot.action('my_subscriptions', userController.handleMySubscriptions);
+  bot.action(/^sub_detail_(.+)$/,  userController.handleSubscriptionDetail);
+  bot.action(/^config_pick_(.+)$/, userController.handleConfigPick);
+  bot.action(/^sub_rotate_(.+)$/,  userController.handleSubRotateConfig);
   bot.action('create_sublink',   userController.handleCreateSubLink);
   bot.action('get_config',       userController.handleGetConfig);
   bot.action('free_trial',       userController.handleFreeTrial);
@@ -128,6 +155,7 @@ export function createBot() {
   bot.action(/^checkout_confirm_(.+)$/,  userController.handleCheckoutConfirm);
   bot.action(/^cardpay_(.+)$/,           userController.handleCardPayment);
   bot.action(/^autocardpay_(.+)$/,       userController.handleAutoCardPayment);
+  bot.action(/^ipaid_(.+)$/,             userController.handleIPaid);
   bot.action(/^config_client_([a-z]+)_(.+)$/, userController.handleConfigClientPick);
   bot.action(/^extra_data_confirm_(\d+)_(.+)$/, userController.handleExtraDataConfirm);
 
@@ -155,6 +183,7 @@ export function createBot() {
 
   // ── Admin commands ───────────────────────────────────────────────────────────
   bot.command('admin', adminController.adminCommand);
+  bot.command('restart_bot', adminController.handleAdminRestart);
 
   bot.action('admin_back',           adminController.handleAdminBack);
   bot.action('admin_dashboard',      adminController.handleAdminDashboard);
@@ -188,7 +217,8 @@ export function createBot() {
     buy_renew:          userController.handleBuyRenew,
     pricing_list:       userController.handlePricingList,
     my_subscriptions:   userController.handleMySubscriptions,
-    extra_data_menu:    userController.handleExtraDataMenu,
+    free_trial:         userController.handleFreeTrial,
+    profile:            userController.handleProfile,
     reseller_entry:     resellerController.handleResellerMenu,
     wallet_menu:        userController.handleWalletMenu,
     faq:                userController.handleFaq,
@@ -197,6 +227,10 @@ export function createBot() {
   };
 
   bot.on('text', async (ctx, next) => {
+    // The "Change Language" reply-keyboard label is always English.
+    if (ctx.message.text === '🌐 Change Language') {
+      return ctx.scene.enter('languageScene');
+    }
     const action = matchReplyButton(ctx.message.text);
     if (action && REPLY_ACTIONS[action]) {
       if (action === 'reseller_entry' && ctx.user?.isReseller) {
@@ -204,6 +238,9 @@ export function createBot() {
       }
       return REPLY_ACTIONS[action](ctx);
     }
+    // Admin-defined custom content buttons.
+    const custom = await matchCustomButton(ctx.message.text);
+    if (custom) return renderCustomButton(ctx, custom);
     return next();
   });
 

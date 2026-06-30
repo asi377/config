@@ -7,7 +7,6 @@ import logger from './src/config/logger.js';
 const Admin = (await import('./src/models/Admin.js')).default;
 const Plan = (await import('./src/models/Plan.js')).default;
 const User = (await import('./src/models/User.js')).default;
-const bcrypt = (await import('bcryptjs')).default;
 
 async function seed() {
   try {
@@ -19,12 +18,11 @@ async function seed() {
     await Plan.deleteMany({});
     await User.deleteMany({});
 
-    // Create superadmin
-    const hashedPassword = await bcrypt.hash('admin123456', 10);
+    // Create superadmin (password is hashed by the Admin model's pre-save hook)
     const admin = await Admin.create({
       email: 'admin@hornet.local',
       displayName: 'System Admin',
-      passwordHash: hashedPassword,
+      password: 'admin123456',
       role: 'superadmin',
     });
     logger.info({ adminId: admin._id }, '[seed] Superadmin created');

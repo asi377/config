@@ -12,6 +12,7 @@ import Finance from './pages/Finance';
 import Settings from './pages/Settings';
 import ResellerPlans from './pages/ResellerPlans';
 import ResellerApplications from './pages/ResellerApplications';
+import CustomButtons from './pages/CustomButtons';
 
 function ProtectedRoute({ children }) {
   const { token, loading } = useAuth();
@@ -42,6 +43,7 @@ export default function App() {
         <Route path="finance" element={<Finance />} />
         <Route path="reseller-plans" element={<ResellerPlans />} />
         <Route path="reseller-applications" element={<ResellerApplications />} />
+        <Route path="custom-buttons" element={<CustomButtons />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>

@@ -317,13 +317,15 @@ export function generateExtraDataKeyboard(lang, subscriptionId, items, formatRia
  * (see replyKeyboardRouter.js), since reply-keyboard presses arrive as
  * plain text messages, not callback queries.
  */
-export function mainReplyKeyboard(lang) {
+export function mainReplyKeyboard(lang, customRows = []) {
   return Markup.keyboard([
-    [t('rk_renew', lang), t('rk_buy', lang)],
-    [t('rk_pricing', lang), t('rk_my_services', lang), t('rk_extra_data', lang)],
-    [t('rk_reseller', lang), t('rk_wallet', lang)],
-    [t('rk_faq', lang), t('rk_connection_guide', lang)],
-    [t('rk_support', lang)],
+    [t('rk_buy', lang), t('rk_free_trial', lang)],
+    [t('rk_my_services', lang), t('rk_pricing', lang)],
+    [t('rk_wallet', lang), t('rk_profile', lang)],
+    [t('rk_reseller', lang)],
+    [t('rk_connection_guide', lang), t('rk_faq', lang)],
+    ...customRows,
+    [t('rk_support', lang), '🌐 Change Language'],
   ]).resize();
 }
 

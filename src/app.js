@@ -170,6 +170,20 @@ export async function initializeDeps() {
     logger.info('[app] Seeded default purchasable plans (Bronze/Silver/Gold)');
   }
 
+  // Seed the force-subscribe channel list with the default HORNET channel if it
+  // hasn't been configured yet. Left DISABLED by default — the admin enables it
+  // from the panel once the bot has been added as an admin of the channel
+  // (membership checks fail-closed, so enabling without that blocks everyone).
+  const SettingModel = (await import('./models/Setting.js')).default;
+  const existingChannels = await SettingModel.get('forceSubscribe.channels', null);
+  if (existingChannels === null) {
+    await SettingModel.set('forceSubscribe.channels', [
+      { id: '@hornet_ch', inviteLink: 'https://t.me/hornet_ch', title: 'HORNET Channel' },
+    ]);
+    await SettingModel.set('forceSubscribe.enabled', false);
+    logger.info('[app] Seeded default force-subscribe channel (@hornet_ch, disabled)');
+  }
+
   if (config.redis?.url) {
     try {
       await redisClient.connect();

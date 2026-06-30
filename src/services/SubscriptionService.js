@@ -42,7 +42,7 @@ class SubscriptionService extends BaseService {
   createSubscription = this.wrapMethod(async (userId, planId) => {
     const session = await mongoose.startSession();
     try {
-      return session.withTransaction(async () => {
+      return await session.withTransaction(async () => {
         const plan = await PlanRepository.findById(planId, { session });
         if (!plan) throw new NotFoundError('Plan');
         if (!plan.isActive) throw new Error('Selected plan is no longer available');
@@ -115,7 +115,7 @@ class SubscriptionService extends BaseService {
   forceCreateSubscription = this.wrapMethod(async (telegramId, planId) => {
     const session = await mongoose.startSession();
     try {
-      return session.withTransaction(async () => {
+      return await session.withTransaction(async () => {
         const plan = await PlanRepository.findById(planId, { session });
         if (!plan) throw new NotFoundError('Plan');
         if (!plan.isActive) throw new Error('Plan is no longer available');
@@ -135,7 +135,7 @@ class SubscriptionService extends BaseService {
   renewWithRollover = this.wrapMethod(async (subscriptionId, newPlanId) => {
     const session = await mongoose.startSession();
     try {
-      return session.withTransaction(async () => {
+      return await session.withTransaction(async () => {
         const sub = await SubscriptionRepository.findById(subscriptionId, { session });
         if (!sub) throw new NotFoundError('Subscription');
         if (sub.status === 'suspended') throw new SubscriptionSuspendedError();
@@ -174,7 +174,7 @@ class SubscriptionService extends BaseService {
   processSharedPaymentApproval = this.wrapMethod(async (subscriptionId, userId) => {
     const session = await mongoose.startSession();
     try {
-      return session.withTransaction(async () => {
+      return await session.withTransaction(async () => {
         const sub = await SubscriptionRepository.findById(subscriptionId, { session });
         if (!sub) throw new NotFoundError('Subscription');
         if (sub.status !== 'pending_shared_payment') throw new SharedPaymentNotPendingError();

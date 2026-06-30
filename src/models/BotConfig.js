@@ -8,7 +8,9 @@ const localizedTextSchema = {
 
 const botMenuButtonSchema = new mongoose.Schema(
   {
-    buttonId: { type: String, required: true },
+    // Not required: legacy botMenus documents stored an `actionId` shape without
+    // a buttonId, and making this mandatory broke every BotConfig.save().
+    buttonId: { type: String, default: '' },
     text: localizedTextSchema,
     row: { type: Number, default: 0 },
     order: { type: Number, default: 0 },
@@ -25,11 +27,31 @@ const botMenuButtonSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// Admin-authored "content" buttons: a label that, when tapped, shows a custom
+// message and (optionally) some link buttons. Deliberately simple — these do
+// NOT touch the bot's complex-logic buttons (buy/wallet/etc.); they only let an
+// admin add extra informational buttons from the panel.
+const customButtonSchema = new mongoose.Schema(
+  {
+    key: { type: String, required: true },          // stable id, e.g. "tutorial"
+    label: localizedTextSchema,                      // text shown ON the button
+    text: localizedTextSchema,                       // message shown when tapped
+    links: [{                                        // optional URL sub-buttons
+      label: { type: String, default: '' },
+      url: { type: String, default: '' },
+    }],
+    enabled: { type: Boolean, default: true },
+    order: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
 const botConfigSchema = new mongoose.Schema({
   welcomeText: localizedTextSchema,
   smsBankRegex: String,
   cryptoPaymentEnabled: { type: Boolean, default: false },
   botMenus: [botMenuButtonSchema],
+  customButtons: [customButtonSchema],
   updatedAt: { type: Date, default: Date.now },
 });
 

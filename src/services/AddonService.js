@@ -30,7 +30,7 @@ class AddonService extends BaseService {
   purchaseExtraData = this.wrapMethod(async (userId, subscriptionId, gb) => {
     const session = await mongoose.startSession();
     try {
-      return session.withTransaction(async () => {
+      return await session.withTransaction(async () => {
         const sub = await SubscriptionRepository.findById(subscriptionId, { session, populate: 'planId' });
         if (!sub) throw new NotFoundError('Subscription');
         if (String(sub.ownerId) !== String(userId)) throw new NotFoundError('Subscription');

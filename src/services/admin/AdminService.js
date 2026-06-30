@@ -105,7 +105,7 @@ class AdminService extends BaseService {
   manualCreateUserAndSubscription = this.wrapMethod(async (telegramId, planId) => {
     const session = await mongoose.startSession();
     try {
-      return session.withTransaction(async () => {
+      return await session.withTransaction(async () => {
         let user = await UserRepository.findByTelegramId(telegramId);
         if (!user) user = await UserRepository.create({ telegramId }, { session });
 

@@ -210,6 +210,70 @@ router.put('/bot-config', requirePermission('settings.write'), async (req, res, 
   } catch (err) { next(err); }
 });
 
+// ==================== CUSTOM BUTTONS (admin-defined content buttons) ====================
+router.get('/custom-buttons', requirePermission('settings.read'), async (req, res, next) => {
+  try {
+    const BotConfig = (await import('../models/BotConfig.js')).default;
+    const cfg = await BotConfig.getSingleton();
+    res.json({ success: true, data: cfg.customButtons || [] });
+  } catch (err) { next(err); }
+});
+
+router.put('/custom-buttons', requirePermission('settings.write'), async (req, res, next) => {
+  try {
+    const { customButtons } = req.body;
+    if (!Array.isArray(customButtons)) {
+      return res.status(400).json({ success: false, error: 'customButtons must be an array' });
+    }
+    const BotConfig = (await import('../models/BotConfig.js')).default;
+    const cfg = await BotConfig.getSingleton();
+    cfg.customButtons = customButtons;
+    await cfg.save();
+    // Drop the bot's 5s cache so the change shows up immediately.
+    const { invalidateCustomButtonsCache } = await import('../bot/customButtons.js');
+    invalidateCustomButtonsCache();
+    const AuditLogRepository = (await import('../repositories/AuditLogRepository.js')).default;
+    await AuditLogRepository.create({
+      adminId: req.adminId, action: 'custom-buttons.update', targetType: 'BotConfig', targetId: cfg._id,
+      newValue: { count: customButtons.length },
+    });
+    res.json({ success: true, data: cfg.customButtons });
+  } catch (err) { next(err); }
+});
+
+// ==================== SMS REGEX (auto card-to-card) ====================
+// Build a proposed amount-capture regex from a sample bank SMS. The admin can
+// optionally pin the real amount to disambiguate. Returns the regex + the
+// detected amount so the panel can show a preview before saving.
+router.post('/sms/build-regex', requirePermission('settings.write'), async (req, res, next) => {
+  try {
+    const { sample, amount } = req.body;
+    if (!sample) return res.status(400).json({ success: false, error: 'sample is required' });
+    const { buildRegexFromSample } = await import('../utils/smsRegexBuilder.js');
+    const built = buildRegexFromSample(sample, amount != null && amount !== '' ? Number(amount) : null);
+    if (!built) return res.status(422).json({ success: false, error: 'Could not detect an amount in the sample' });
+    res.json({ success: true, data: built });
+  } catch (err) { next(err); }
+});
+
+// Test mode: run a regex (the saved one, or one passed in) against a sample SMS
+// and report what amount it extracts — mirrors production extraction exactly.
+router.post('/sms/test', requirePermission('settings.read'), async (req, res, next) => {
+  try {
+    const { sample, regex } = req.body;
+    if (!sample) return res.status(400).json({ success: false, error: 'sample is required' });
+    const { testSmsRegex } = await import('../utils/smsRegexBuilder.js');
+    let pattern = regex;
+    if (!pattern) {
+      const BotConfig = (await import('../models/BotConfig.js')).default;
+      const cfg = await BotConfig.getSingleton();
+      pattern = cfg?.smsBankRegex || '';
+    }
+    const extracted = testSmsRegex(pattern, sample);
+    res.json({ success: true, data: { regex: pattern, extractedAmount: extracted, matched: extracted != null } });
+  } catch (err) { next(err); }
+});
+
 // ==================== BANDWIDTH ====================
 router.get('/bandwidth/scaling', requirePermission('servers.read'), AdminBandwidthController.getLoadScalingActions);
 

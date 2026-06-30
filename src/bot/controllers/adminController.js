@@ -19,6 +19,21 @@ export async function adminCommand(ctx) {
   });
 }
 
+/**
+ * Admin-only hard restart of the bot/server process. Relies on the process
+ * manager (systemd / docker / pm2) to bring it back up. If nothing supervises
+ * the process it will simply stop — that's intentional and admin-triggered.
+ */
+export async function handleAdminRestart(ctx) {
+  const lang = ctx.lang || 'fa';
+  const isAdmin = await ADMIN_ROLE_CHECK(ctx);
+  if (!isAdmin) return ctx.reply(t('unauthorized', lang));
+
+  await ctx.reply(t('admin_restarting', lang));
+  logger.warn({ by: ctx.from.id }, '[admin] Process restart requested via /restart_bot');
+  setTimeout(() => process.exit(0), 500);
+}
+
 export async function handleAdminBack(ctx) {
   await adminCommand(ctx);
 }

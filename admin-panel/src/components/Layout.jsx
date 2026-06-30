@@ -23,6 +23,7 @@ export default function Layout() {
     { name: 'Finance', path: '/finance', icon: '💰' },
     { name: 'Reseller Plans', path: '/reseller-plans', icon: '🏷️' },
     { name: 'Reseller Applications', path: '/reseller-applications', icon: '🤝' },
+    { name: 'Custom Buttons', path: '/custom-buttons', icon: '🔘' },
     { name: 'Settings', path: '/settings', icon: '⚙️' },
   ];
 

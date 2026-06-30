@@ -6,6 +6,7 @@ import UserRepository from '../repositories/UserRepository.js';
 import PlanRepository from '../repositories/PlanRepository.js';
 import SettingRepository from '../repositories/SettingRepository.js';
 import { extractBankMelliAmount } from '../utils/smsParser.js';
+import { testSmsRegex } from '../utils/smsRegexBuilder.js';
 import subscriptionService from './SubscriptionService.js';
 import ProvisioningService from './ProvisioningService.js';
 import FraudScoreService from './FraudScoreService.js';
@@ -122,7 +123,12 @@ class PaymentService extends BaseService {
   });
 
   processSmsWebhook = this.wrapMethod(async (smsText, _botInstance) => {
-    const amount = extractBankMelliAmount(smsText);
+    // Prefer the admin-configured regex (built from a sample SMS in the panel);
+    // fall back to the built-in Bank-Melli patterns if it isn't set or misses.
+    const BotConfig = (await import('../models/BotConfig.js')).default;
+    const botConfig = await BotConfig.getSingleton();
+    const savedRegex = botConfig?.smsBankRegex || '';
+    const amount = (savedRegex && testSmsRegex(savedRegex, smsText)) || extractBankMelliAmount(smsText);
     if (!amount) {
       logger.warn({ smsPreview: smsText.slice(0, 100) }, '[sms-webhook] could not extract amount');
       return;

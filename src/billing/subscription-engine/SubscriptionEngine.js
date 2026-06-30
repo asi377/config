@@ -28,7 +28,7 @@ class SubscriptionEngine {
   async create(userId, planId, gateway = 'wallet') {
     const session = await mongoose.startSession();
     try {
-      return session.withTransaction(async () => {
+      return await session.withTransaction(async () => {
         const user = await UserRepository.findById(userId, { session });
         if (!user) throw new SubscriptionLifecycleError('User not found');
 
@@ -105,7 +105,7 @@ class SubscriptionEngine {
   async renew(subscriptionId, gateway = null) {
     const session = await mongoose.startSession();
     try {
-      return session.withTransaction(async () => {
+      return await session.withTransaction(async () => {
         const sub = await SubscriptionRepository.findById(subscriptionId, { session });
         if (!sub) throw new SubscriptionLifecycleError('Subscription not found');
         if (sub.status === 'cancelled') throw new SubscriptionLifecycleError('Subscription cancelled');
