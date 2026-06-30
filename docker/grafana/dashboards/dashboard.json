@@ -1,0 +1,209 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "title": "HORNET VPN - Production Overview",
+  "uid": "hornet-production",
+  "version": 1,
+  "timezone": "browser",
+  "tags": ["hornet", "vpn"],
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "title": "System Health",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "title": "Active Subscriptions",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "targets": [{
+        "expr": "hornet_active_subscriptions",
+        "legendFormat": "Active"
+      }],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto"
+      }
+    },
+    {
+      "title": "Total Users",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "targets": [{
+        "expr": "hornet_total_users",
+        "legendFormat": "Users"
+      }],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto"
+      }
+    },
+    {
+      "title": "Daily Revenue (IRR)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "targets": [{
+        "expr": "hornet_daily_revenue",
+        "legendFormat": "Revenue"
+      }],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto"
+      }
+    },
+    {
+      "title": "Active HTTP Requests",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "targets": [{
+        "expr": "hornet_http_requests_active",
+        "legendFormat": "Active"
+      }],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "title": "Node Health Score (avg)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "targets": [{
+        "expr": "avg(hornet_node_health_score)",
+        "legendFormat": "Avg Health"
+      }],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "title": "Fraud Events (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "targets": [{
+        "expr": "sum(increase(hornet_fraud_events_total[24h]))",
+        "legendFormat": "Events"
+      }],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "title": "HTTP Request Latency (p95)",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }
+    },
+    {
+      "title": "Request Latency p95",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum(rate(hornet_http_request_duration_seconds_bucket[5m])) by (le))",
+        "legendFormat": "p95"
+      }],
+      "options": {
+        "legend": { "calcs": ["max", "mean"] },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+    {
+      "title": "Request Rate (rps)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [{
+        "expr": "sum(rate(hornet_http_requests_total[5m]))",
+        "legendFormat": "RPS"
+      }],
+      "options": {
+        "legend": { "calcs": ["max", "mean"] },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+    {
+      "title": "Node & Queue",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }
+    },
+    {
+      "title": "Node Load %",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "targets": [
+        { "expr": "hornet_node_load_percent", "legendFormat": "{{node_id}}" }
+      ],
+      "options": {
+        "legend": { "calcs": ["max", "mean"], "show": true },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+    {
+      "title": "Queue Jobs (Failed)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 15 },
+      "targets": [
+        { "expr": "hornet_queue_job_count{status=\"failed\"}", "legendFormat": "{{queue}}" }
+      ],
+      "options": {
+        "legend": { "calcs": ["max"] }
+      }
+    },
+    {
+      "title": "Queue Jobs (Waiting)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 15 },
+      "targets": [
+        { "expr": "hornet_queue_job_count{status=\"waiting\"}", "legendFormat": "{{queue}}" }
+      ],
+      "options": {
+        "legend": { "calcs": ["max"] }
+      }
+    },
+    {
+      "title": "Node Active Users",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "targets": [
+        { "expr": "hornet_node_active_users", "legendFormat": "{{node_id}} ({{region}})" }
+      ],
+      "options": {
+        "legend": { "calcs": ["max", "mean"] }
+      }
+    },
+    {
+      "title": "Bandwidth Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "targets": [{
+        "expr": "rate(hornet_bandwidth_used_bytes_total[5m])",
+        "legendFormat": "{{node_id}}"
+      }],
+      "options": {
+        "legend": { "calcs": ["max"] }
+      }
+    }
+  ],
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"],
+    "time_options": ["5m", "15m", "1h", "6h", "24h", "7d"]
+  }
+}

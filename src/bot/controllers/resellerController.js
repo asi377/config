@@ -1,0 +1,182 @@
+import logger from '../../config/logger.js';
+import { t } from '../../utils/i18n.js';
+import { generateResellerMenuKeyboard, mainMenuKeyboard } from '../keyboards.js';
+import ResellerPlanRepository from '../../repositories/ResellerPlanRepository.js';
+import SubscriptionRepository from '../../repositories/SubscriptionRepository.js';
+
+/**
+ * Entry point for users who are NOT yet a reseller — shows the list of
+ * available reseller tiers to apply to.
+ */
+export async function handleResellerMenu(ctx) {
+  const lang = ctx.lang || 'fa';
+  try {
+    if (ctx.user?.isReseller) {
+      return handleResellerMiniPanel(ctx);
+    }
+
+    const plans = await ResellerPlanRepository.findActive();
+    await ctx.editMessageText(t('reseller_menu_title', lang), {
+      reply_markup: generateResellerMenuKeyboard(lang, plans).reply_markup,
+    });
+  } catch (err) {
+    logger.error({ err }, '[bot] handleResellerMenu error');
+    await ctx.reply(t('error_generic_request', lang));
+  }
+}
+
+/**
+ * User picked a tier to apply to. `ctx.match[1]` is the ResellerPlan _id.
+ *
+ * - `requiresApproval === false` (the "open" tier): immediate approval, no
+ *   fee path needed since it has applicationFee: 0 per seedDefaults.
+ * - `requiresApproval === true`: charge applicationFee from wallet (if any),
+ *   set status to pending, notify a superadmin.
+ */
+export async function handleResellerTierSelect(ctx) {
+  const lang = ctx.lang || 'fa';
+  const tierId = ctx.match[1];
+
+  try {
+    const User = (await import('../../models/User.js')).default;
+    const tier = await ResellerPlanRepository.findById(tierId);
+    if (!tier || !tier.isActive) {
+      await ctx.answerCbQuery?.();
+      await ctx.reply(t('reseller_tier_not_found', lang));
+      return;
+    }
+
+    const user = await User.findOne({ telegramId: String(ctx.from.id) });
+    if (!user) {
+      await ctx.reply(t('error_generic_request', lang));
+      return;
+    }
+
+    if (user.isReseller) {
+      return handleResellerMiniPanel(ctx);
+    }
+
+    if (tier.requiresApproval === false) {
+      user.isReseller = true;
+      user.currentResellerPlanId = tier._id;
+      user.resellerApplicationStatus = 'approved';
+      await user.save();
+
+      await ctx.editMessageText(
+        t('reseller_application_auto_approved', lang, { tier: tier.displayName }),
+        { reply_markup: mainMenuKeyboard(lang, user).reply_markup },
+      );
+      return;
+    }
+
+    const fee = tier.applicationFee || 0;
+    if (fee > 0) {
+      if (user.walletBalance < fee) {
+        await ctx.reply(t('reseller_insufficient_balance', lang, {
+          balance: user.walletBalance,
+          fee,
+        }));
+        return;
+      }
+      user.walletBalance -= fee;
+    }
+
+    user.currentResellerPlanId = tier._id;
+    user.resellerApplicationStatus = 'pending';
+    await user.save();
+
+    await ctx.editMessageText(
+      t('reseller_application_submitted', lang, { tier: tier.displayName }),
+      { reply_markup: mainMenuKeyboard(lang, user).reply_markup },
+    );
+
+    // Notify a superadmin that an application needs review.
+    try {
+      const UserRepository = (await import('../../repositories/UserRepository.js')).default;
+      const adminUser = await UserRepository.findOne({ role: 'superadmin' }, { sort: { createdAt: 1 } });
+      if (adminUser?.telegramId) {
+        await ctx.telegram.sendMessage(
+          adminUser.telegramId,
+          t('reseller_admin_notify_application', 'fa', {
+            telegramId: user.telegramId,
+            tier: tier.displayName,
+            fee,
+          }),
+        );
+      }
+    } catch (notifyErr) {
+      logger.error({ err: notifyErr }, '[bot] failed to notify superadmin of reseller application');
+    }
+  } catch (err) {
+    logger.error({ err }, '[bot] handleResellerTierSelect error');
+    await ctx.reply(t('error_generic_request', lang));
+  }
+}
+
+/**
+ * Mini-panel for existing resellers: tier info, cap, accounts sold so far
+ * (computed on demand via aggregation — no denormalized counter), referral
+ * commission pool, and 5 most recent subscriptions sold to referred users.
+ */
+export async function handleResellerMiniPanel(ctx) {
+  const lang = ctx.lang || 'fa';
+  try {
+    const User = (await import('../../models/User.js')).default;
+    const user = await User.findOne({ telegramId: String(ctx.from.id) }).populate('currentResellerPlanId');
+    if (!user || !user.isReseller) {
+      return handleResellerMenu(ctx);
+    }
+
+    const tier = user.currentResellerPlanId;
+    const cap = tier && (tier.maxActiveAccounts === null || tier.maxActiveAccounts === undefined)
+      ? t('reseller_cap_unlimited', lang)
+      : String(tier?.maxActiveAccounts ?? '-');
+
+    // Count distinct referred users with at least one active/on_hold subscription.
+    const soldResult = await SubscriptionRepository.aggregate([
+      { $match: { status: { $in: ['active', 'on_hold'] } } },
+      { $lookup: { from: 'users', localField: 'ownerId', foreignField: '_id', as: 'owner' } },
+      { $unwind: '$owner' },
+      { $match: { 'owner.referredBy': user._id } },
+      { $group: { _id: '$owner._id' } },
+      { $count: 'soldCount' },
+    ]);
+    const soldCount = soldResult[0]?.soldCount || 0;
+
+    const recentSubs = await SubscriptionRepository.aggregate([
+      { $lookup: { from: 'users', localField: 'ownerId', foreignField: '_id', as: 'owner' } },
+      { $unwind: '$owner' },
+      { $match: { 'owner.referredBy': user._id } },
+      { $sort: { createdAt: -1 } },
+      { $limit: 5 },
+      { $lookup: { from: 'plans', localField: 'planId', foreignField: '_id', as: 'plan' } },
+      { $unwind: { path: '$plan', preserveNullAndEmptyArrays: true } },
+      { $project: { createdAt: 1, planTitle: '$plan.title' } },
+    ]);
+
+    const recentLines = recentSubs.length
+      ? recentSubs.map((s) => `• ${s.planTitle || '-'} — ${new Date(s.createdAt).toLocaleDateString()}`).join('\n')
+      : t('reseller_no_recent_sales', lang);
+
+    const message = [
+      t('reseller_panel_title', lang),
+      '',
+      t('reseller_panel_tier', lang, { tier: tier?.displayName || '-' }),
+      t('reseller_panel_discount', lang, { discount: tier?.discountPercent ?? 0 }),
+      t('reseller_panel_cap', lang, { cap }),
+      t('reseller_panel_sold', lang, { sold: soldCount }),
+      t('reseller_panel_commission', lang, { commission: user.referralCommission || 0 }),
+      '',
+      t('reseller_panel_recent_header', lang),
+      recentLines,
+    ].join('\n');
+
+    const editFn = ctx.editMessageText ? 'editMessageText' : 'reply';
+    await ctx[editFn](message, {
+      reply_markup: mainMenuKeyboard(lang, user).reply_markup,
+    }).catch(() => ctx.reply(message, { reply_markup: mainMenuKeyboard(lang, user).reply_markup }));
+  } catch (err) {
+    logger.error({ err }, '[bot] handleResellerMiniPanel error');
+    await ctx.reply(t('error_generic_request', lang));
+  }
+}

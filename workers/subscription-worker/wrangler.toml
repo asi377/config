@@ -1,0 +1,16 @@
+name = "subscription-worker"
+main = "index.js"
+compatibility_date = "2025-04-01"
+
+# Route: sub.mydomain.com/*
+# Add this to your Cloudflare DNS dashboard first (CNAME sub → your worker)
+routes = [
+  { pattern = "sub.mydomain.com/*",  zone_name = "mydomain.com" },
+]
+
+# Environment variables — set actual values via `npx wrangler secret put` for
+# production, or inline here for dev:
+[env.production]
+vars = { BACKEND_URL = "https://api.mydomain.com", CACHE_TTL = "60" }
+
+# INTERNAL_SECRET must be set via `npx wrangler secret put INTERNAL_SECRET`

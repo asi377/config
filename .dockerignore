@@ -1,0 +1,9 @@
+node_modules/
+npm-debug.log
+.env
+*.log
+.docker/
+coverage/
+.nyc_output/
+__pycache__/
+*.pyc
