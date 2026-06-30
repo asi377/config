@@ -98,3 +98,22 @@ export async function resetBandwidth(req, res, next) {
     res.json({ success: true, data: { subscriptionsReset: result.modifiedCount } });
   } catch (err) { next(err); }
 }
+
+export async function resetFreeTrialAll(req, res, next) {
+  try {
+    const User = (await import('../../models/User.js')).default;
+    const AuditLogRepository = (await import('../../repositories/AuditLogRepository.js')).default;
+
+    const result = await User.updateMany({}, { $set: { freeTrialClaimedAt: null } });
+
+    await AuditLogRepository.create({
+      adminId: req.adminId,
+      action: 'user.free_trial_reset_all',
+      targetType: 'User',
+      targetId: null,
+      newValue: { usersAffected: result.modifiedCount },
+    });
+
+    res.json({ success: true, data: { usersReset: result.modifiedCount } });
+  } catch (err) { next(err); }
+}

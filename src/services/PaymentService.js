@@ -144,7 +144,9 @@ class PaymentService extends BaseService {
       const autoEnabled = await SettingRepository.get('payment.autoApprove.enabled', false);
       let autoApproved = false;
 
-      if (autoEnabled && receipt.planId) {
+      // Note: receipt.planId can be null for wallet top-ups (no provisioning
+      // needed, processReceipt still credits the wallet unconditionally).
+      if (autoEnabled) {
         const tolerance = await SettingRepository.get('payment.autoApprove.toleranceAmount', 0);
         const ceiling = await SettingRepository.get('payment.autoApprove.ceilingAmount', 2000000);
         const maxFraud = await SettingRepository.get('payment.autoApprove.maxFraudScore', 40);
@@ -201,9 +203,14 @@ class PaymentService extends BaseService {
   /**
    * @param {object} telegram - a Telegraf `bot.telegram` API client (NOT the bot object itself).
    */
-  async _notifyUserOfDelivery(telegram, { user, tunnelConfig }) {
+  async _notifyUserOfDelivery(telegram, { user, tunnelConfig, receipt }) {
     if (!tunnelConfig) {
-      await telegram.sendMessage(user.telegramId, '✅ پرداخت شما تأیید شد. اشتراک شما فعال شد.');
+      // No planId on the receipt means this was a wallet top-up, not a
+      // subscription purchase — no tunnel is ever provisioned for those.
+      const msg = receipt && !receipt.planId
+        ? `✅ پرداخت شما تأیید شد. مبلغ ${this._formatRials(receipt.amount)} به کیف پول شما اضافه شد.`
+        : '✅ پرداخت شما تأیید شد. اشتراک شما فعال شد.';
+      await telegram.sendMessage(user.telegramId, msg);
       return;
     }
     const subLink = `${config.backendUrl}/sub/${tunnelConfig.uuid}`;

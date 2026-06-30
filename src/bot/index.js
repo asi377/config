@@ -7,6 +7,7 @@ import BroadcastService from '../services/admin/BroadcastService.js';
 import createSubLinkScene from './scenes/createSubLinkScene.js';
 import receiptUploadScene from './scenes/receiptUploadScene.js';
 import languageScene from './scenes/languageScene.js';
+import walletTopupScene from './scenes/walletTopupScene.js';
 import * as userController from './controllers/userController.js';
 import * as adminController from './controllers/adminController.js';
 import * as resellerController from './controllers/resellerController.js';
@@ -15,6 +16,8 @@ import { resolveUserMiddleware } from './middlewares/userResolver.js';
 import { languageMiddleware } from './middlewares/languageMiddleware.js';
 import { forceSubscribeMiddleware } from './middlewares/forceSubscribeMiddleware.js';
 import { handleForceSubscribeRecheck } from './controllers/forceSubscribeController.js';
+import { matchReplyButton } from './replyKeyboardRouter.js';
+import { mainReplyKeyboard } from './keyboards.js';
 
 /**
  * Queue-based Telegram message dispatcher.
@@ -91,7 +94,7 @@ export function createBot() {
   if (config.proxyUrl) telegramConfig.agent = new HttpsProxyAgent(config.proxyUrl);
 
   const bot   = new Telegraf(config.botToken, { telegram: telegramConfig });
-  const stage = new Scenes.Stage([createSubLinkScene, receiptUploadScene, languageScene]);
+  const stage = new Scenes.Stage([createSubLinkScene, receiptUploadScene, languageScene, walletTopupScene]);
 
   // Attach queue to bot for use in controllers
   const msgQueue = new BotMessageQueue(bot);
@@ -115,6 +118,9 @@ export function createBot() {
   bot.action('create_sublink',   userController.handleCreateSubLink);
   bot.action('get_config',       userController.handleGetConfig);
   bot.action('free_trial',       userController.handleFreeTrial);
+  bot.action('update_uuid',      userController.handleUpdateUuid);
+  bot.action('contact_support',  userController.handleContactSupport);
+  bot.action('wallet_topup_start', userController.handleWalletTopupStart);
 
   bot.action(/^category_(.+)$/,          userController.handleCategorySelection);
   bot.action(/^select_plan_(.+)$/,       userController.handlePlanSelection);
@@ -123,6 +129,7 @@ export function createBot() {
   bot.action(/^cardpay_(.+)$/,           userController.handleCardPayment);
   bot.action(/^autocardpay_(.+)$/,       userController.handleAutoCardPayment);
   bot.action(/^config_client_([a-z]+)_(.+)$/, userController.handleConfigClientPick);
+  bot.action(/^extra_data_confirm_(\d+)_(.+)$/, userController.handleExtraDataConfirm);
 
   // ── Reseller flow ────────────────────────────────────────────────────────────
   bot.action('reseller_menu',  resellerController.handleResellerMenu);
@@ -175,6 +182,30 @@ export function createBot() {
   bot.action(/^admin_plan_toggle_(.+)$/,   adminController.handleAdminPlanToggle);
   bot.action(/^admin_server_detail_(.+)$/, adminController.handleAdminServerDetail);
   bot.action(/^receipt_(approve|reject)_(.+)$/, adminController.handleReceiptAction);
+
+  // ── Persistent reply-keyboard router ─────────────────────────────────────────
+  const REPLY_ACTIONS = {
+    buy_renew:          userController.handleBuyRenew,
+    pricing_list:       userController.handlePricingList,
+    my_subscriptions:   userController.handleMySubscriptions,
+    extra_data_menu:    userController.handleExtraDataMenu,
+    reseller_entry:     resellerController.handleResellerMenu,
+    wallet_menu:        userController.handleWalletMenu,
+    faq:                userController.handleFaq,
+    connection_guide:   userController.handleConnectionGuide,
+    contact_support:    userController.handleContactSupport,
+  };
+
+  bot.on('text', async (ctx, next) => {
+    const action = matchReplyButton(ctx.message.text);
+    if (action && REPLY_ACTIONS[action]) {
+      if (action === 'reseller_entry' && ctx.user?.isReseller) {
+        return resellerController.handleResellerMiniPanel(ctx);
+      }
+      return REPLY_ACTIONS[action](ctx);
+    }
+    return next();
+  });
 
   // ── Broadcast text capture ───────────────────────────────────────────────────
   bot.on('text', async (ctx, next) => {

@@ -1,4 +1,5 @@
 import logger from '../../config/logger.js';
+import EventBus from '../../events/EventBus.js';
 
 // ==================== RESELLER PLANS (tiers) ====================
 
@@ -117,7 +118,7 @@ export async function approveResellerApplication(req, res, next) {
     const User = (await import('../../models/User.js')).default;
     const AuditLogRepository = (await import('../../repositories/AuditLogRepository.js')).default;
 
-    const user = await User.findById(req.params.userId);
+    const user = await User.findById(req.params.userId).populate('currentResellerPlanId');
     if (!user) return res.status(404).json({ success: false, error: 'User not found' });
 
     user.isReseller = true;
@@ -130,6 +131,13 @@ export async function approveResellerApplication(req, res, next) {
       targetType: 'User',
       targetId: user._id,
       newValue: { isReseller: true, resellerApplicationStatus: 'approved' },
+    });
+
+    EventBus.emit('reseller:application_reviewed', {
+      userTelegramId: user.telegramId,
+      lang: user.language,
+      approved: true,
+      tierName: user.currentResellerPlanId?.displayName,
     });
 
     logger.info({ userId: user._id }, '[admin] Reseller application approved');
@@ -145,6 +153,9 @@ export async function rejectResellerApplication(req, res, next) {
     const user = await User.findById(req.params.userId);
     if (!user) return res.status(404).json({ success: false, error: 'User not found' });
 
+    const telegramId = user.telegramId;
+    const lang = user.language;
+
     user.resellerApplicationStatus = 'rejected';
     user.currentResellerPlanId = null;
     await user.save();
@@ -155,6 +166,12 @@ export async function rejectResellerApplication(req, res, next) {
       targetType: 'User',
       targetId: user._id,
       newValue: { resellerApplicationStatus: 'rejected' },
+    });
+
+    EventBus.emit('reseller:application_reviewed', {
+      userTelegramId: telegramId,
+      lang,
+      approved: false,
     });
 
     logger.info({ userId: user._id }, '[admin] Reseller application rejected');

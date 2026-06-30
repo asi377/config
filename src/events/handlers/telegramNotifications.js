@@ -75,6 +75,19 @@ export function registerTelegramNotificationHandlers(bot) {
     }
   }, { name: 'bootstrap_notification' }));
 
+  ids.push(EventBus.on('reseller:application_reviewed', async (data) => {
+    try {
+      if (!data.userTelegramId) return;
+      const { t } = await import('../../utils/i18n.js');
+      const lang = data.lang || 'fa';
+      const key = data.approved ? 'reseller_application_approved_notify' : 'reseller_application_rejected_notify';
+      const msg = t(key, lang, { tier: data.tierName });
+      await bot.telegram.sendMessage(data.userTelegramId, msg);
+    } catch (err) {
+      logger.error({ err }, '[events] Failed to send reseller review notification');
+    }
+  }, { name: 'reseller_review_notification' }));
+
   logger.info('[events] Telegram notification handlers registered');
   return ids;
 }

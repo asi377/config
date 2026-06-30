@@ -1,6 +1,6 @@
 import { Scenes } from 'telegraf';
 import { t, SUPPORTED_LANGS } from '../../utils/i18n.js';
-import { generateLanguageKeyboard, mainMenuKeyboard } from '../keyboards.js';
+import { generateLanguageKeyboard, mainMenuKeyboard, mainReplyKeyboard } from '../keyboards.js';
 import logger from '../../config/logger.js';
 
 const languageScene = new Scenes.BaseScene('languageScene');
@@ -30,6 +30,9 @@ languageScene.action(/^set_language_(en|fa|ru)$/, async (ctx) => {
     await ctx.answerCbQuery();
     await ctx.editMessageText(t('language_updated', newLang), {
       reply_markup: mainMenuKeyboard(newLang).reply_markup,
+    });
+    await ctx.reply(t('main_menu_title', newLang), {
+      reply_markup: mainReplyKeyboard(newLang).reply_markup,
     });
   } catch (err) {
     logger.error({ err }, '[bot] languageScene set_language error');

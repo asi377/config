@@ -38,6 +38,16 @@ export default function UserManagement() {
     }
   };
 
+  const handleResetFreeTrialAll = async () => {
+    if (!confirm('Reset free-trial eligibility for ALL users? Everyone will be able to claim the free trial again.')) return;
+    try {
+      const res = await api.post('/admin/users/reset-free-trial');
+      toast.success(`Free trial reset for ${res.data.data.usersReset} users`);
+    } catch (err) {
+      toast.error('Failed to reset free trial');
+    }
+  };
+
   const handleWalletAdjust = async () => {
     if (!selectedUser || !walletAmount) return;
     try {
@@ -58,7 +68,12 @@ export default function UserManagement() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">User Management</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">User Management</h1>
+        <button onClick={handleResetFreeTrialAll} className="btn-secondary text-sm">
+          Reset Free Trial (All Users)
+        </button>
+      </div>
       <div className="card overflow-x-auto">
         <table className="w-full">
           <thead>

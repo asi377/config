@@ -110,6 +110,66 @@ export async function initializeDeps() {
   const ResellerPlan = (await import('./models/ResellerPlan.js')).default;
   await ResellerPlan.seedDefaults();
 
+  // Ensure a free-trial plan exists so the bot's "free trial" button always
+  // has something to provision (idempotent — only inserts if none exists yet).
+  const Plan = (await import('./models/Plan.js')).default;
+  const existingTrial = await Plan.findOne({ isTrial: true });
+  if (!existingTrial) {
+    await Plan.create({
+      title: 'طرح آزمایشی رایگان',
+      type: 'economy',
+      basePrice: 0,
+      baseVolumeGB: 1,
+      durationDays: 3,
+      maxSubLinks: 1,
+      isTrial: true,
+      salesEnabled: false,
+      sortOrder: 0,
+      pricing: [{ currency: 'IRR', amount: 0, gateway: 'wallet', enabled: true }],
+    });
+    logger.info('[app] Seeded default free-trial plan');
+  }
+
+  // Seed a few default purchasable plans so "Buy / Renew" is never empty on
+  // first run. Idempotent (only runs if no non-trial plans exist yet) and
+  // fully editable afterward from the admin panel (Plans CRUD).
+  const existingSalesPlan = await Plan.findOne({ isTrial: { $ne: true } });
+  if (!existingSalesPlan) {
+    await Plan.create([
+      {
+        title: 'برنزی',
+        type: 'economy',
+        basePrice: 150000,
+        baseVolumeGB: 30,
+        durationDays: 30,
+        maxSubLinks: 2,
+        sortOrder: 10,
+        pricing: [{ currency: 'IRR', amount: 150000, gateway: 'wallet', enabled: true }],
+      },
+      {
+        title: 'نقره‌ای',
+        type: 'normal',
+        basePrice: 350000,
+        baseVolumeGB: 80,
+        durationDays: 30,
+        maxSubLinks: 4,
+        sortOrder: 20,
+        pricing: [{ currency: 'IRR', amount: 350000, gateway: 'wallet', enabled: true }],
+      },
+      {
+        title: 'طلایی',
+        type: 'vip',
+        basePrice: 650000,
+        baseVolumeGB: 200,
+        durationDays: 30,
+        maxSubLinks: 8,
+        sortOrder: 30,
+        pricing: [{ currency: 'IRR', amount: 650000, gateway: 'wallet', enabled: true }],
+      },
+    ]);
+    logger.info('[app] Seeded default purchasable plans (Bronze/Silver/Gold)');
+  }
+
   if (config.redis?.url) {
     try {
       await redisClient.connect();

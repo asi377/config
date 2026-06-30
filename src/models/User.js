@@ -78,6 +78,10 @@ const userSchema = new mongoose.Schema(
       enum: ['none', 'pending', 'approved', 'rejected'],
       default: 'none',
     },
+    freeTrialClaimedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

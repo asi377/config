@@ -284,6 +284,49 @@ export function generatePlansKeyboard(lang, plans, formatRials) {
   return Markup.inlineKeyboard(rows);
 }
 
+// ─── Wallet menu ────────────────────────────────────────────────────────────
+export function walletMenuKeyboard(lang) {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback(t('btn_wallet_topup', lang), 'wallet_topup_start')],
+    [Markup.button.callback(t('btn_back_main_menu', lang), 'main_menu')],
+  ]);
+}
+
+// ─── Dynamic: extra-data add-on options ────────────────────────────────────
+/**
+ * @param {string} lang
+ * @param {string} subscriptionId
+ * @param {Array<{gb: number, price: number}>} items
+ * @param {function} formatRials
+ */
+export function generateExtraDataKeyboard(lang, subscriptionId, items, formatRials) {
+  const rows = items.map(({ gb, price }) => [
+    Markup.button.callback(
+      t('extra_data_option', lang, { gb, price: formatRials(price, lang) }),
+      `extra_data_confirm_${gb}_${subscriptionId}`,
+    ),
+  ]);
+  rows.push([Markup.button.callback(t('btn_back_main_menu', lang), 'main_menu')]);
+  return Markup.inlineKeyboard(rows);
+}
+
+// ─── Persistent reply keyboard (the bottom-of-chat expandable menu) ───────
+/**
+ * Telegram's native persistent keyboard — toggled via the icon next to the
+ * message input. Buttons are matched back to actions by exact label text
+ * (see replyKeyboardRouter.js), since reply-keyboard presses arrive as
+ * plain text messages, not callback queries.
+ */
+export function mainReplyKeyboard(lang) {
+  return Markup.keyboard([
+    [t('rk_renew', lang), t('rk_buy', lang)],
+    [t('rk_pricing', lang), t('rk_my_services', lang), t('rk_extra_data', lang)],
+    [t('rk_reseller', lang), t('rk_wallet', lang)],
+    [t('rk_faq', lang), t('rk_connection_guide', lang)],
+    [t('rk_support', lang)],
+  ]).resize();
+}
+
 // ─── Dynamic: language selection ───────────────────────────────────────────
 export function generateLanguageKeyboard() {
   return Markup.inlineKeyboard([

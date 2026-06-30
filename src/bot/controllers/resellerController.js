@@ -15,6 +15,16 @@ export async function handleResellerMenu(ctx) {
       return handleResellerMiniPanel(ctx);
     }
 
+    if (ctx.user?.resellerApplicationStatus === 'pending') {
+      const editFn = ctx.callbackQuery ? 'editMessageText' : 'reply';
+      await ctx[editFn](t('reseller_application_pending', lang), {
+        reply_markup: mainMenuKeyboard(lang, ctx.user).reply_markup,
+      }).catch(() => ctx.reply(t('reseller_application_pending', lang), {
+        reply_markup: mainMenuKeyboard(lang, ctx.user).reply_markup,
+      }));
+      return;
+    }
+
     const plans = await ResellerPlanRepository.findActive();
     await ctx.editMessageText(t('reseller_menu_title', lang), {
       reply_markup: generateResellerMenuKeyboard(lang, plans).reply_markup,
@@ -54,6 +64,12 @@ export async function handleResellerTierSelect(ctx) {
 
     if (user.isReseller) {
       return handleResellerMiniPanel(ctx);
+    }
+
+    if (user.resellerApplicationStatus === 'pending') {
+      await ctx.answerCbQuery?.();
+      await ctx.reply(t('reseller_application_pending', lang));
+      return;
     }
 
     if (tier.requiresApproval === false) {

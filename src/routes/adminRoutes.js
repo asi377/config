@@ -71,6 +71,7 @@ router.post('/users/:id/unban', requirePermission('users.ban'), async (req, res,
   } catch (err) { next(err); }
 });
 router.post('/users/:id/reset-bandwidth', requirePermission('users.write'), AdminUserController.resetBandwidth);
+router.post('/users/reset-free-trial', requirePermission('users.write'), AdminUserController.resetFreeTrialAll);
 router.post('/users/:id/wallet', requirePermission('users.wallet'), async (req, res, next) => {
   try {
     const User = (await import('../models/User.js')).default;

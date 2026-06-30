@@ -53,7 +53,13 @@ export async function handleAdminUsers(ctx) {
 
 export async function handleAdminUserResetAll(ctx) {
   const lang = ctx.lang || 'fa';
+  const isAdmin = await ADMIN_ROLE_CHECK(ctx);
+  if (!isAdmin) return ctx.reply(t('unauthorized', lang));
+
   await ctx.reply(t('admin_user_reset_all_progress', lang));
+  const User = (await import('../../models/User.js')).default;
+  const result = await User.updateMany({}, { $set: { freeTrialClaimedAt: null } });
+  await ctx.reply(t('admin_user_reset_all_done', lang, { count: result.modifiedCount }));
 }
 
 export async function handleAdminServers(ctx) {
