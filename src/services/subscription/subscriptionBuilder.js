@@ -61,14 +61,24 @@ class SubscriptionBuilder {
 
     // Detect client type
     const { format, contentType, extension } = detect(userAgent);
-    const filename = `${profileName || 'subscription'}.${extension}`;
+
+    // HTTP header values must be ASCII (Latin-1). Plan titles are often non-ASCII
+    // (e.g. Persian "برنزی"), which would throw ERR_INVALID_CHAR, so:
+    //  - Content-Disposition: strip to an ASCII fallback + add RFC 5987 filename*
+    //  - Profile-Title: base64-encode when non-ASCII (the v2rayNG/Hiddify way)
+    const rawName = profileName || 'subscription';
+    const asciiName = rawName.replace(/[^\x20-\x7E]/g, '').trim() || 'subscription';
+    const encodedFilename = encodeURIComponent(`${rawName}.${extension}`);
+    const profileTitle = /[^\x00-\x7F]/.test(profileName || '')
+      ? `base64:${Buffer.from(profileName || 'HORNET', 'utf-8').toString('base64')}`
+      : (profileName || 'HORNET');
 
     // Build headers
     const headers = {
       'Content-Type':              contentType,
-      'Content-Disposition':       `attachment; filename="${filename}"`,
+      'Content-Disposition':       `attachment; filename="${asciiName}.${extension}"; filename*=UTF-8''${encodedFilename}`,
       'Profile-Update-Interval':   '24',
-      'Profile-Title':             profileName || 'HORNET',
+      'Profile-Title':             profileTitle,
       'Cache-Control':             'no-store, no-cache',
       'Subscription-Userinfo':     this._buildUserInfo(traffic),
     };

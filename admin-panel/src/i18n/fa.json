@@ -1,0 +1,40 @@
+{
+  "nav": {
+    "dashboard": "داشبورد",
+    "users": "کاربران",
+    "plans": "پلن‌ها",
+    "receipts": "رسیدها",
+    "botBuilder": "سازنده ربات",
+    "serverFleet": "سرورها",
+    "finance": "مالی",
+    "resellerPlans": "پلن‌های نمایندگی",
+    "resellerApplications": "درخواست‌های نمایندگی",
+    "customButtons": "دکمه‌های سفارشی",
+    "settings": "تنظیمات"
+  },
+  "header": {
+    "title": "پنل مدیریت"
+  },
+  "common": {
+    "logout": "خروج",
+    "loading": "در حال بارگذاری...",
+    "save": "ذخیره",
+    "cancel": "انصراف",
+    "delete": "حذف",
+    "edit": "ویرایش",
+    "add": "افزودن",
+    "search": "جستجو",
+    "language": "زبان"
+  },
+  "login": {
+    "title": "مدیریت HORNET",
+    "subtitle": "وارد حساب کاربری خود شوید",
+    "email": "ایمیل",
+    "password": "رمز عبور",
+    "signIn": "ورود",
+    "signingIn": "در حال ورود...",
+    "twoFactor": "کد تأیید دو مرحله‌ای",
+    "verify": "تأیید",
+    "invalid": "ایمیل یا رمز عبور نادرست است"
+  }
+}

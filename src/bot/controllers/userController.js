@@ -65,8 +65,9 @@ export async function startCommand(ctx) {
     // trilingual welcome + language picker. Only once the user picks a language
     // (languageScene) do we render the localized main menu.
     if (isNewUser || !user.languageChosen) {
-      // Remove the persistent reply keyboard so ONLY the inline language-picker
-      // buttons are visible until the user picks a language.
+      // Remove any persistent reply keyboard so ONLY the inline language picker
+      // is visible. The language prompt + buttons are then rendered by the
+      // languageScene enter handler (sent directly, so the buttons always show).
       await ctx.reply(t('welcome_multilang', 'fa'), {
         reply_markup: { remove_keyboard: true },
       });
@@ -236,8 +237,9 @@ export async function handleSubscriptionDetail(ctx) {
 
     const text = await buildSubscriptionDetail(sub, lang);
     const rows = [];
-    if (sub.status === 'active') {
+    if (sub.status === 'active' || sub.status === 'on_hold') {
       rows.push([{ text: t('btn_get_config', lang), callback_data: `config_pick_${sub._id}` }]);
+      rows.push([{ text: t('btn_show_qr', lang), callback_data: `sub_qr_${sub._id}` }]);
       rows.push([{ text: t('btn_change_config', lang), callback_data: `sub_rotate_${sub._id}` }]);
     } else if (sub.status === 'expired') {
       rows.push([{ text: t('btn_renew_subscription', lang), callback_data: 'buy_renew' }]);
@@ -250,6 +252,33 @@ export async function handleSubscriptionDetail(ctx) {
     });
   } catch (err) {
     logger.error({ err, subId }, '[bot] handleSubscriptionDetail error');
+    await ctx.reply(t('error_generic_request', lang));
+  }
+}
+
+/** Sends a QR code (PNG) of the subscription link for easy mobile import. */
+export async function handleSubQr(ctx) {
+  const lang = ctx.lang || 'fa';
+  if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+  const subId = ctx.match[1];
+  try {
+    const Subscription = (await import('../../models/Subscription.js')).default;
+    const TunnelConfig = (await import('../../models/TunnelConfig.js')).default;
+    const User = (await import('../../models/User.js')).default;
+    const user = await User.findOne({ telegramId: String(ctx.from.id) });
+    const sub = await Subscription.findOne({ _id: subId, ownerId: user?._id });
+    if (!sub) { await ctx.reply(t('error_not_found', lang, { resource: 'Subscription' })); return; }
+
+    const tunnel = await TunnelConfig.findOne({ subscriptionId: sub._id, isActive: true }).sort({ createdAt: -1 });
+    if (!tunnel) { await ctx.reply(t('sub_no_config_yet', lang)); return; }
+
+    const link = `${config.backendUrl}/sub/${tunnel.uuid}`;
+    // Generate the QR locally (no third-party service — the link stays private).
+    const QRCode = (await import('qrcode')).default;
+    const png = await QRCode.toBuffer(link, { width: 480, margin: 1 });
+    await ctx.replyWithPhoto({ source: png }, { caption: `${t('sub_qr_caption', lang)}\n\n\`${link}\``, parse_mode: 'Markdown' });
+  } catch (err) {
+    logger.error({ err, subId }, '[bot] handleSubQr error');
     await ctx.reply(t('error_generic_request', lang));
   }
 }
@@ -392,17 +421,24 @@ export async function handleFreeTrial(ctx) {
     });
 
     const activated = await subscriptionService.activateSubscription(subscription._id);
-    const { tunnelConfig } = await ProvisioningService.provisionTunnelOnNode(activated, trialPlan, user);
+    await ProvisioningService.provisionTunnelOnNode(activated, trialPlan, user);
 
     user.freeTrialClaimedAt = new Date();
     await user.save();
 
-    const subLink = `${config.backendUrl}/sub/${tunnelConfig.uuid}`;
-    await ctx.reply(t('free_trial_activated', lang, {
-      days: trialPlan.durationDays,
-      volume: trialPlan.baseVolumeGB,
-      link: subLink,
-    }));
+    // Deliver the full, professional payload (plan, status, remaining volume,
+    // expiry, and sub-link) rather than a bare link.
+    const detailSub = await Subscription.findById(subscription._id).populate('planId', 'title').lean();
+    const detail = await buildSubscriptionDetail(detailSub, lang);
+    await ctx.reply(`${t('free_trial_activated_header', lang)}\n\n${detail}`, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: t('btn_connection_guide', lang), callback_data: 'connection_guide' }],
+          [{ text: t('btn_my_subscriptions', lang), callback_data: 'my_subscriptions' }],
+        ],
+      },
+    });
   } catch (err) {
     logger.error({ err }, '[bot] handleFreeTrial error');
     await ctx.reply(t('free_trial_failed', lang));
@@ -436,7 +472,42 @@ export async function handleContactSupport(ctx) {
 
 export async function handleConnectionGuide(ctx) {
   const lang = ctx.lang || 'fa';
-  await ctx.reply(t('connection_guide_message', lang), { parse_mode: 'Markdown' });
+  if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+  // Structured, per-platform guide: pick a platform → app links + steps.
+  await ctx.reply(t('connection_guide_intro', lang), {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: t('btn_platform_android', lang), callback_data: 'guide_android' }],
+        [{ text: t('btn_platform_ios', lang), callback_data: 'guide_ios' }],
+        [{ text: t('btn_platform_windows', lang), callback_data: 'guide_windows' }],
+        [{ text: t('btn_back_main_menu', lang), callback_data: 'main_menu' }],
+      ],
+    },
+  });
+}
+
+const PLATFORM_GUIDE_KEYS = {
+  android: 'guide_android_body',
+  ios: 'guide_ios_body',
+  windows: 'guide_windows_body',
+};
+
+/** Shows the step-by-step guide for one platform (ctx.match[1]). */
+export async function handleGuidePlatform(ctx) {
+  const lang = ctx.lang || 'fa';
+  if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+  const platform = ctx.match?.[1];
+  const key = PLATFORM_GUIDE_KEYS[platform] || 'connection_guide_intro';
+  await ctx.reply(t(key, lang), {
+    parse_mode: 'Markdown',
+    disable_web_page_preview: true,
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: t('btn_guide_back_platforms', lang), callback_data: 'connection_guide' }],
+        [{ text: t('btn_back_main_menu', lang), callback_data: 'main_menu' }],
+      ],
+    },
+  });
 }
 
 export async function handleFaq(ctx) {

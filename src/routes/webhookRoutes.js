@@ -4,6 +4,7 @@ import PaymentService from '../services/PaymentService.js';
 import paymentGateway from '../billing/gateway/index.js';
 import { handleSmsWebhook } from '../utils/smsParser.js';
 import logger from '../config/logger.js';
+import config from '../config/index.js';
 import { createRateLimiter } from '../middlewares/index.js';
 
 const webhookLimiter = createRateLimiter({ windowMs: 60000, max: 60 });
@@ -54,6 +55,69 @@ router.post('/sms-v2', webhookLimiter, smsAuth, async (req, res) => {
   } catch (err) {
     logger.error({ err }, '[sms-webhook-v2] processing error');
     res.status(500).json({ success: false, error: 'Failed to process webhook' });
+  }
+});
+
+// ── Mock payment webhook (LOCAL / DEV testing) ────────────────────────────────
+// Lets you exercise the full approve → provision → config-delivery pipeline
+// without a real bank SMS. Guarded by the admin API key (open in non-production).
+//
+// Modes (JSON body):
+//   1. Direct receipt approval/rejection (runs provisioning on success):
+//        { "receiptId": "<id>", "status": "success" | "failure" }
+//        { "latestPending": true, "status": "success" }
+//   2. Raw SMS passthrough (exercises the real SMS-match + auto-approve path):
+//        { "smsText": "مبلغ 150000 ريال ..." }
+router.post('/mock-payment', webhookLimiter, async (req, res) => {
+  const key = req.headers['x-api-key'];
+  if (config.env === 'production' && key !== config.adminApiKey) {
+    return res.status(401).json({ success: false, error: 'x-api-key required in production' });
+  }
+
+  try {
+    const { receiptId, status = 'success', latestPending, smsText } = req.body || {};
+    const bot = req.app.get('bot');
+
+    // Mode 2 — feed a raw SMS through the genuine matching pipeline.
+    if (smsText) {
+      await PaymentService.processSmsWebhook(smsText, bot);
+      return res.json({ success: true, mode: 'sms-passthrough', note: 'Check logs + receipt status.' });
+    }
+
+    // Mode 1 — resolve the target receipt.
+    const Receipt = (await import('../models/Receipt.js')).default;
+    let receipt = null;
+    if (receiptId) {
+      receipt = await Receipt.findById(receiptId);
+    } else if (latestPending) {
+      receipt = await Receipt.findOne({ status: { $in: ['pending', 'sms_matched'] } }).sort({ createdAt: -1 });
+    }
+    if (!receipt) {
+      return res.status(404).json({
+        success: false,
+        error: 'No target receipt. Provide receiptId, latestPending:true, or smsText.',
+      });
+    }
+
+    const action = status === 'failure' ? 'reject' : 'approve';
+    const result = await PaymentService.processReceipt(receipt._id, null, action, { auto: true });
+
+    const subLink = result.tunnelConfig
+      ? `${config.backendUrl}/sub/${result.tunnelConfig.uuid}`
+      : null;
+
+    return res.json({
+      success: true,
+      mode: 'direct-receipt',
+      action,
+      receiptId: String(receipt._id),
+      receiptStatus: result.receipt?.status || null,
+      subscriptionId: result.subscription?._id ? String(result.subscription._id) : null,
+      subLink,
+    });
+  } catch (err) {
+    logger.error({ err }, '[mock-payment] processing error');
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 

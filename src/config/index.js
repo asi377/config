@@ -11,7 +11,13 @@ const config = {
   channelId: process.env.CHANNEL_ID,
   webhookUrl: process.env.WEBHOOK_URL,
   cardNumber: process.env.CARD_NUMBER || '6037998192480597',
-  backendUrl: process.env.BACKEND_URL || `http://localhost:${parseInt(process.env.PORT, 10) || 3000}`,
+  // Public base URL used to build subscription links delivered to clients.
+  // BASE_URL is the canonical name; BACKEND_URL is kept for backward compat.
+  // In production this MUST be a publicly reachable URL (VPS IP or domain),
+  // e.g. https://your-domain.com — a private 172.x/192.168.x IP only works for
+  // devices on the same LAN (see docs/NETWORKING.md).
+  backendUrl: process.env.BASE_URL || process.env.BACKEND_URL
+    || `http://localhost:${parseInt(process.env.PORT, 10) || 3000}`,
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   logLevel: process.env.LOG_LEVEL || 'info',
   infra: {

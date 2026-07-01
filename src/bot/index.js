@@ -142,11 +142,14 @@ export function createBot() {
   bot.action(/^sub_detail_(.+)$/,  userController.handleSubscriptionDetail);
   bot.action(/^config_pick_(.+)$/, userController.handleConfigPick);
   bot.action(/^sub_rotate_(.+)$/,  userController.handleSubRotateConfig);
+  bot.action(/^sub_qr_(.+)$/,      userController.handleSubQr);
   bot.action('create_sublink',   userController.handleCreateSubLink);
   bot.action('get_config',       userController.handleGetConfig);
   bot.action('free_trial',       userController.handleFreeTrial);
   bot.action('update_uuid',      userController.handleUpdateUuid);
   bot.action('contact_support',  userController.handleContactSupport);
+  bot.action('connection_guide', userController.handleConnectionGuide);
+  bot.action(/^guide_(android|ios|windows)$/, userController.handleGuidePlatform);
   bot.action('wallet_topup_start', userController.handleWalletTopupStart);
 
   bot.action(/^category_(.+)$/,          userController.handleCategorySelection);
@@ -164,6 +167,11 @@ export function createBot() {
   bot.action('reseller_menu',  resellerController.handleResellerMenu);
   bot.action('reseller_panel', resellerController.handleResellerMiniPanel);
   bot.action(/^reseller_apply_(.+)$/, resellerController.handleResellerTierSelect);
+
+  // ── Referral (inline-only) ───────────────────────────────────────────────────
+  bot.action('referral_invite_link',  resellerController.handleReferralInviteLink);
+  bot.action('referral_my_referrals', resellerController.handleReferralMyReferrals);
+  bot.action('referral_earnings',     resellerController.handleReferralEarnings);
 
   // ── Language switching ───────────────────────────────────────────────────────
   bot.action('change_language', (ctx) => ctx.scene.enter('languageScene'));

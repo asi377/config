@@ -1,0 +1,40 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "users": "Users",
+    "plans": "Plans",
+    "receipts": "Receipts",
+    "botBuilder": "Bot Builder",
+    "serverFleet": "Server Fleet",
+    "finance": "Finance",
+    "resellerPlans": "Reseller Plans",
+    "resellerApplications": "Reseller Applications",
+    "customButtons": "Custom Buttons",
+    "settings": "Settings"
+  },
+  "header": {
+    "title": "Admin Panel"
+  },
+  "common": {
+    "logout": "Logout",
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "search": "Search",
+    "language": "Language"
+  },
+  "login": {
+    "title": "HORNET Admin",
+    "subtitle": "Sign in to your account",
+    "email": "Email",
+    "password": "Password",
+    "signIn": "Sign In",
+    "signingIn": "Signing in...",
+    "twoFactor": "2FA Code",
+    "verify": "Verify",
+    "invalid": "Invalid email or password"
+  }
+}

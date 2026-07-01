@@ -1,6 +1,6 @@
 import logger from '../../config/logger.js';
 import { t } from '../../utils/i18n.js';
-import { generateResellerMenuKeyboard, mainMenuKeyboard } from '../keyboards.js';
+import { generateResellerMenuKeyboard, mainMenuKeyboard, generateReferralInlineKeyboard } from '../keyboards.js';
 import ResellerPlanRepository from '../../repositories/ResellerPlanRepository.js';
 import SubscriptionRepository from '../../repositories/SubscriptionRepository.js';
 
@@ -187,12 +187,106 @@ export async function handleResellerMiniPanel(ctx) {
       recentLines,
     ].join('\n');
 
+    // Referral panel uses an INLINE keyboard (Invite Link / My Referrals /
+    // Earnings) — never the persistent reply keyboard.
+    const kb = generateReferralInlineKeyboard(lang).reply_markup;
     const editFn = ctx.editMessageText ? 'editMessageText' : 'reply';
-    await ctx[editFn](message, {
-      reply_markup: mainMenuKeyboard(lang, user).reply_markup,
-    }).catch(() => ctx.reply(message, { reply_markup: mainMenuKeyboard(lang, user).reply_markup }));
+    await ctx[editFn](message, { reply_markup: kb })
+      .catch(() => ctx.reply(message, { reply_markup: kb }));
   } catch (err) {
     logger.error({ err }, '[bot] handleResellerMiniPanel error');
+    await ctx.reply(t('error_generic_request', lang));
+  }
+}
+
+/**
+ * Referral: show the user's personal invite link (Telegram deep link with their
+ * referral code). Inline-only flow.
+ */
+export async function handleReferralInviteLink(ctx) {
+  const lang = ctx.lang || 'fa';
+  try {
+    if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+    const User = (await import('../../models/User.js')).default;
+    const user = await User.findOne({ telegramId: String(ctx.from.id) });
+    if (!user) { await ctx.reply(t('error_generic_request', lang)); return; }
+
+    const username = ctx.botInfo?.username;
+    const link = username
+      ? `https://t.me/${username}?start=${user.referralCode}`
+      : `کد دعوت شما: ${user.referralCode}`;
+
+    const message = [
+      t('referral_invite_title', lang),
+      '',
+      `\`${link}\``,
+      '',
+      t('referral_invite_hint', lang),
+    ].join('\n');
+
+    await ctx.reply(message, {
+      parse_mode: 'Markdown',
+      reply_markup: generateReferralInlineKeyboard(lang).reply_markup,
+    });
+  } catch (err) {
+    logger.error({ err }, '[bot] handleReferralInviteLink error');
+    await ctx.reply(t('error_generic_request', lang));
+  }
+}
+
+/**
+ * Referral: list how many users this person referred + recent joiners.
+ */
+export async function handleReferralMyReferrals(ctx) {
+  const lang = ctx.lang || 'fa';
+  try {
+    if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+    const User = (await import('../../models/User.js')).default;
+    const user = await User.findOne({ telegramId: String(ctx.from.id) });
+    if (!user) { await ctx.reply(t('error_generic_request', lang)); return; }
+
+    const total = await User.countDocuments({ referredBy: user._id });
+    const recent = await User.find({ referredBy: user._id })
+      .sort({ createdAt: -1 }).limit(10).lean();
+
+    const lines = recent.length
+      ? recent.map((u, i) => `${i + 1}. ${u.firstName || u.username || u.telegramId} — ${new Date(u.createdAt).toLocaleDateString()}`).join('\n')
+      : t('referral_none_yet', lang);
+
+    const message = [
+      t('referral_my_title', lang, { count: total }),
+      '',
+      lines,
+    ].join('\n');
+
+    await ctx.reply(message, { reply_markup: generateReferralInlineKeyboard(lang).reply_markup });
+  } catch (err) {
+    logger.error({ err }, '[bot] handleReferralMyReferrals error');
+    await ctx.reply(t('error_generic_request', lang));
+  }
+}
+
+/**
+ * Referral: show accumulated referral commission / earnings.
+ */
+export async function handleReferralEarnings(ctx) {
+  const lang = ctx.lang || 'fa';
+  try {
+    if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+    const User = (await import('../../models/User.js')).default;
+    const user = await User.findOne({ telegramId: String(ctx.from.id) });
+    if (!user) { await ctx.reply(t('error_generic_request', lang)); return; }
+
+    const message = [
+      t('referral_earnings_title', lang),
+      '',
+      t('referral_earnings_commission', lang, { commission: user.referralCommission || 0 }),
+      t('referral_earnings_wallet', lang, { balance: user.walletBalance || 0 }),
+    ].join('\n');
+
+    await ctx.reply(message, { reply_markup: generateReferralInlineKeyboard(lang).reply_markup });
+  } catch (err) {
+    logger.error({ err }, '[bot] handleReferralEarnings error');
     await ctx.reply(t('error_generic_request', lang));
   }
 }

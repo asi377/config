@@ -3,25 +3,71 @@ import Transaction from '../models/Transaction.js';
 import User from '../models/User.js';
 import BotConfig from '../models/BotConfig.js';
 
-const BANK_PATTERNS = [
-  /انتقال:([\d,]+)\+/,
-  /انتقالي:([\d,]+)\+/,
-  /مبلغ:?\s*([\d,]+)\s*ریال/,
-  /مبلغ:?\s*([\d,]+)/,
-  /(\d{4,})\s*ریال/,
-];
+/**
+ * Normalise a Persian/Arabic string for robust matching:
+ *  - Arabic yeh (ي U+064A) → Persian yeh (ی U+06CC)
+ *  - Arabic kaf (ك U+0643) → Persian kaf (ک U+06A9)
+ *  - Persian/Arabic-Indic digits → Latin digits
+ */
+function normalizeFa(input) {
+  const s = String(input);
+  const persianDigits = '۰۱۲۳۴۵۶۷۸۹';
+  const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
+  return s
+    .replace(/[۰-۹]/g, (d) => String(persianDigits.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String(arabicDigits.indexOf(d)))
+    .replace(/ي/g, 'ی')
+    .replace(/ك/g, 'ک');
+}
 
-export function extractBankMelliAmount(smsText) {
+/**
+ * STRICT Bank-Melli transfer-SMS parser.
+ *
+ * Only accepts the official Bank-Melli card-transfer format, e.g.:
+ *   بانك ملي ايران
+ *   كارت: 0597
+ *   انتقال: 650,000
+ *   مانده: 957,732
+ *   تاريخ: 1405/04/10
+ *   ساعت: 15:01:50
+ *
+ * Any SMS that is not a Bank-Melli transfer (missing the bank header or the
+ * `انتقال` transfer line) is rejected → returns null. Loose `مبلغ`/deposit
+ * formats are intentionally NOT accepted.
+ *
+ * @returns {{ amount:number, card:string|null, date:string|null, time:string|null }|null}
+ */
+export function parseBankMelliSms(smsText) {
   if (!smsText || typeof smsText !== 'string') return null;
-  for (const pattern of BANK_PATTERNS) {
-    const match = smsText.match(pattern);
-    if (match) {
-      const cleaned = match[1].replace(/,/g, '').trim();
-      const amount = parseInt(cleaned, 10);
-      if (!isNaN(amount) && amount > 0) return amount;
-    }
-  }
-  return null;
+  const text = normalizeFa(smsText);
+
+  // Require the bank identity AND a transfer line to accept the SMS.
+  const hasBankHeader = /بانک\s*ملی\s*ایران/.test(text);
+  const transferMatch = text.match(/انتقال\s*[:：]?\s*([\d,]+)/);
+  if (!hasBankHeader || !transferMatch) return null;
+
+  const amount = parseInt(transferMatch[1].replace(/,/g, ''), 10);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const cardMatch = text.match(/کارت\s*[:：]?\s*(\d{3,4})/);
+  const dateMatch = text.match(/تاریخ\s*[:：]?\s*(\d{4}\/\d{1,2}\/\d{1,2})/);
+  const timeMatch = text.match(/ساعت\s*[:：]?\s*(\d{1,2}:\d{2}:\d{2})/);
+
+  return {
+    amount,
+    card: cardMatch ? cardMatch[1] : null,
+    date: dateMatch ? dateMatch[1] : null,
+    time: timeMatch ? timeMatch[1] : null,
+  };
+}
+
+/**
+ * Backward-compatible amount extractor — now backed by the strict parser, so it
+ * only returns an amount for a genuine Bank-Melli transfer SMS.
+ */
+export function extractBankMelliAmount(smsText) {
+  const parsed = parseBankMelliSms(smsText);
+  return parsed ? parsed.amount : null;
 }
 
 function extractAmountWithRegex(smsText, regexString) {

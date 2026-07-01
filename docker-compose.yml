@@ -5,8 +5,21 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?MONGO_PASSWORD is required}
+    # Single-node replica set so multi-document transactions (payments, billing,
+    # provisioning) work. The keyfile secures replica-set internal auth; it is
+    # copied to a private path and chowned at startup because bind-mounted files
+    # keep host ownership/permissions that mongod rejects.
+    command:
+      - bash
+      - -c
+      - |
+        cp /etc/mongo-keyfile-src /tmp/mongo-keyfile
+        chmod 400 /tmp/mongo-keyfile
+        chown mongodb:mongodb /tmp/mongo-keyfile
+        exec docker-entrypoint.sh mongod --replSet rs0 --keyFile /tmp/mongo-keyfile --bind_ip_all
     volumes:
       - mongo_data:/data/db
+      - ./docker/mongo-keyfile:/etc/mongo-keyfile-src:ro
     networks:
       - hornet-net
     healthcheck:
@@ -38,7 +51,7 @@ services:
       redis: { condition: service_healthy }
     env_file: .env
     environment:
-      - MONGO_URI=mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:?}@mongodb:27017/vpn-panel?authSource=admin
+      - MONGO_URI=mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:?}@mongodb:27017/vpn-panel?authSource=admin&replicaSet=rs0
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
     ports:

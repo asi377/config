@@ -9,6 +9,32 @@ import { setBotInstance } from './bot/botInstance.js';
 import JobManager from './jobs/JobManager.js';
 import { createApp, initializeDeps } from './app.js';
 
+// Safety net: a stray promise rejection (e.g. a transient Telegram / upstream
+// network error) must be logged, not crash-loop the whole backend in Docker.
+process.on('unhandledRejection', (reason) => {
+  logger.error({ reason: reason?.message || reason }, '[server] Unhandled promise rejection (kept alive)');
+});
+process.on('uncaughtException', (err) => {
+  logger.error({ err: err?.message, stack: err?.stack }, '[server] Uncaught exception (kept alive)');
+});
+
+/**
+ * Launch the Telegram bot without letting a transient Telegram-API failure take
+ * down the process. Retries with backoff; each attempt's rejection is caught.
+ */
+function launchBotWithRetry(bot, attempt = 1) {
+  bot.launch()
+    .then(() => logger.info('[server] Telegram bot started'))
+    .catch((err) => {
+      const delay = Math.min(60_000, 5_000 * attempt);
+      logger.error(
+        { err: err?.message, attempt, retryInMs: delay },
+        '[server] Telegram bot launch failed — backend stays up, will retry',
+      );
+      setTimeout(() => launchBotWithRetry(bot, attempt + 1), delay);
+    });
+}
+
 async function start() {
   try {
     await initializeDeps();
@@ -17,11 +43,17 @@ async function start() {
     const app = await createApp(httpServer);
     httpServer.on('request', app);
 
-    // Initialize Telegram bot
+    // Initialize Telegram bot. launch() performs an initial getMe against
+    // api.telegram.org; if that network call fails (e.g. transient upstream
+    // outage), its rejection must NOT crash the whole backend. Launch in the
+    // background with retry so the HTTP API + agent WebSocket stay up.
     const bot = createBot();
     setBotInstance(bot);
-    bot.launch();
-    logger.info('[server] Telegram bot started');
+    // Expose the bot to HTTP handlers (webhookRoutes reads req.app.get('bot')).
+    // Without this, SMS auto-approve could not deliver the subscription link to
+    // the user via Telegram.
+    app.set('bot', bot);
+    launchBotWithRetry(bot);
 
     // Register cron jobs (expiry checks, billing, notifications)
     JobManager.start(bot);

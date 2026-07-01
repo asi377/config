@@ -7,7 +7,11 @@ export function jwtAuth(req, res, next) {
     if (!token) return res.status(401).json({ error: 'No token provided' });
 
     const decoded = jwt.verify(token, config.jwt.secret);
-    req.adminId = decoded.adminId;
+    // Access tokens are signed with the admin id in `sub` and the session id in
+    // `jti` (see AdminAuthService._issueTokens). Fall back to `adminId` for any
+    // legacy tokens still in circulation.
+    req.adminId = decoded.sub || decoded.adminId;
+    req.tokenId = decoded.jti;
     req.admin = decoded;
     next();
   } catch (err) {
@@ -21,7 +25,8 @@ export function optionalJwtAuth(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, config.jwt.secret);
-    req.adminId = decoded.adminId;
+    req.adminId = decoded.sub || decoded.adminId;
+    req.tokenId = decoded.jti;
     req.admin = decoded;
   } catch {
     // Invalid/expired token on an optional route: proceed unauthenticated.

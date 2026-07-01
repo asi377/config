@@ -223,12 +223,34 @@ class PaymentService extends BaseService {
       return;
     }
     const subLink = `${config.backendUrl}/sub/${tunnelConfig.uuid}`;
+
+    // Enrich the delivery with the full payload: plan, remaining time, volume.
+    let detailLines = [];
+    try {
+      const Subscription = (await import('../models/Subscription.js')).default;
+      const sub = await Subscription.findById(tunnelConfig.subscriptionId).populate('planId', 'title');
+      if (sub) {
+        const days = sub.expireDate
+          ? Math.max(0, Math.ceil((new Date(sub.expireDate).getTime() - Date.now()) / 86400000))
+          : null;
+        const GB = 1073741824;
+        const totalGB = sub.totalVolumeBytes > 0 ? Math.round(sub.totalVolumeBytes / GB) : null;
+        detailLines = [
+          sub.planId?.title ? `📦 پلن: ${sub.planId.title}` : null,
+          days != null ? `⏳ اعتبار: ${days} روز` : null,
+          totalGB != null ? `📊 حجم: ${totalGB} گیگابایت` : '📊 حجم: نامحدود',
+          `📶 وضعیت: فعال`,
+        ].filter(Boolean);
+      }
+    } catch { /* best-effort enrichment; link is always sent below */ }
+
     await telegram.sendMessage(
       user.telegramId,
       [
         '✅ پرداخت شما تأیید و اشتراک شما فعال شد.',
+        ...(detailLines.length ? ['', ...detailLines] : []),
         '',
-        'لینک اشتراک شما (در اپلیکیشن کلاینت وارد کنید):',
+        '🔗 لینک اشتراک شما (در اپلیکیشن کلاینت وارد کنید):',
         subLink,
       ].join('\n'),
     );

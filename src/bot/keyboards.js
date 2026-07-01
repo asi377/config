@@ -292,6 +292,19 @@ export function walletMenuKeyboard(lang) {
   ]);
 }
 
+/**
+ * Referral / reseller panel keyboard — INLINE buttons ONLY (never a reply
+ * keyboard): Invite Link · My Referrals · Earnings.
+ */
+export function generateReferralInlineKeyboard(lang) {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback(t('btn_referral_invite_link', lang), 'referral_invite_link')],
+    [Markup.button.callback(t('btn_referral_my_referrals', lang), 'referral_my_referrals')],
+    [Markup.button.callback(t('btn_referral_earnings', lang), 'referral_earnings')],
+    [Markup.button.callback(t('btn_back_main_menu', lang), 'main_menu')],
+  ]);
+}
+
 // ─── Dynamic: extra-data add-on options ────────────────────────────────────
 /**
  * @param {string} lang

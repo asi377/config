@@ -6,8 +6,10 @@ import logger from '../../config/logger.js';
 const languageScene = new Scenes.BaseScene('languageScene');
 
 languageScene.enter(async (ctx) => {
-  await ctx.msgQueue.sendMessage(
-    ctx.chat.id,
+  // Send the picker directly (not via the telegram-out queue): the inline
+  // keyboard must arrive reliably in the same message as the prompt, otherwise
+  // the user sees the text with no buttons and is stuck at first contact.
+  await ctx.reply(
     t('language_prompt', ctx.lang || 'fa'),
     generateLanguageKeyboard(),
   );

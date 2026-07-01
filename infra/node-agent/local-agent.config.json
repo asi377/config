@@ -1,0 +1,8 @@
+{
+  "backendUrl": "http://localhost:3000",
+  "nodeToken": "60824b8e1b8ae590c527920f484889c112fcbbb552b4f1466854d5269048a685",
+  "xrayApiAddr": "127.0.0.1:10085",
+  "inboundTag": "vless-in",
+  "protocol": "vless",
+  "heartbeatIntervalSec": 10
+}
