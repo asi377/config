@@ -31,6 +31,7 @@ services:
 
   backend:
     build: .
+    init: true
     restart: unless-stopped
     depends_on:
       mongodb: { condition: service_healthy }
@@ -40,8 +41,6 @@ services:
       - MONGO_URI=mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:?}@mongodb:27017/vpn-panel?authSource=admin
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
-      - BACKEND_URL=http://localhost:3000
-      - CORS_ORIGIN=http://localhost:3000
     ports:
       - "3000:3000"
     networks:

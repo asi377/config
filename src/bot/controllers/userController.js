@@ -1,6 +1,6 @@
 import logger from '../../config/logger.js';
 import { t } from '../../utils/i18n.js';
-import { formatRials, formatBytes, formatRank, calculateRank } from '../utils.js';
+import { formatRials, formatBytes, formatRank, calculateRank, toRial } from '../utils.js';
 import {
   generatePlansKeyboard,
   generateClientPickerKeyboard,
@@ -50,13 +50,27 @@ export async function startCommand(ctx) {
     const User = (await import('../../models/User.js')).default;
     const telegramId = String(ctx.from.id);
     let user = await User.findOne({ telegramId });
+    let isNewUser = false;
 
     if (!user) {
+      isNewUser = true;
       user = await User.create({
         telegramId,
         role: 'user',
       });
       logger.info({ telegramId }, '[bot] New user registered');
+    }
+
+    // First contact: location/language is unknown, so always start with a
+    // trilingual welcome + language picker. Only once the user picks a language
+    // (languageScene) do we render the localized main menu.
+    if (isNewUser || !user.languageChosen) {
+      // Remove the persistent reply keyboard so ONLY the inline language-picker
+      // buttons are visible until the user picks a language.
+      await ctx.reply(t('welcome_multilang', 'fa'), {
+        reply_markup: { remove_keyboard: true },
+      });
+      return ctx.scene.enter('languageScene');
     }
 
     const lang = ctx.lang || user.language || 'fa';
@@ -349,7 +363,34 @@ export async function handleFreeTrial(ctx) {
       return;
     }
 
-    const subscription = await subscriptionService.createSubscription(user._id, trialPlan._id);
+    // Free trial is free — bypass the wallet-deduction path in createSubscription
+    // and build the document directly so a user with 0 balance can always claim it.
+    const Subscription = (await import('../../models/Subscription.js')).default;
+    const Server = (await import('../../models/Server.js')).default;
+
+    const server = await Server.findOne({ status: 'active' });
+    if (!server) {
+      await ctx.reply(t('free_trial_unavailable', lang));
+      return;
+    }
+
+    const now = new Date();
+    const expireDate = new Date(now.getTime() + (trialPlan.durationDays || 3) * 86_400_000);
+    const GB = 1_073_741_824;
+    const totalVolumeBytes = Math.round((trialPlan.baseVolumeGB || 1) * GB);
+
+    const subscription = await Subscription.create({
+      userId: user._id,
+      ownerId: user._id,
+      planId: trialPlan._id,
+      serverId: server._id,
+      status: 'on_hold',
+      totalVolumeBytes,
+      usedVolumeBytes: 0,
+      startDate: now,
+      expireDate,
+    });
+
     const activated = await subscriptionService.activateSubscription(subscription._id);
     const { tunnelConfig } = await ProvisioningService.provisionTunnelOnNode(activated, trialPlan, user);
 
@@ -528,15 +569,36 @@ export async function handlePlanSelection(ctx) {
 export async function handleCheckout(ctx) {
   const lang = ctx.lang || 'fa';
   const planId = ctx.match[1];
+  // Payment methods are gated by language: card-to-card (bank transfer) is
+  // Iran-only → Persian users; EN/RU users get crypto only. Persian users get
+  // BOTH card modes: auto ("I paid", no receipt) and manual (receipt upload).
+  let inline_keyboard;
+  if (lang === 'fa') {
+    inline_keyboard = [
+      [{ text: t('btn_card_auto', lang), callback_data: `autocardpay_${planId}` }],
+      [{ text: t('btn_card_manual', lang), callback_data: `cardpay_${planId}` }],
+      [{ text: t('btn_wallet', lang), callback_data: `checkout_confirm_${planId}` }],
+    ];
+  } else {
+    inline_keyboard = [
+      [{ text: t('btn_crypto', lang), callback_data: 'crypto_payment' }],
+    ];
+  }
   await ctx.editMessageText(t('select_payment_method', lang), {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: t('btn_card_to_card', lang), callback_data: `cardpay_${planId}` }],
-        [{ text: t('btn_crypto', lang), callback_data: 'crypto_payment' }],
-        [{ text: t('btn_wallet', lang), callback_data: `checkout_confirm_${planId}` }],
-      ],
-    },
+    reply_markup: { inline_keyboard },
   });
+}
+
+/**
+ * Crypto payment. Currently NOT ready — shows the "unavailable, contact support"
+ * message with the configured support ID (per product decision). This is the
+ * only payment path offered to EN/RU users until a crypto gateway is wired.
+ */
+export async function handleCryptoPayment(ctx) {
+  const lang = ctx.lang || 'fa';
+  if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+  const contact = await SettingRepository.get('support.contact', '@hornet_support');
+  await ctx.reply(t('crypto_unavailable', lang, { contact }));
 }
 
 export async function handleCheckoutConfirm(ctx) {
@@ -588,8 +650,9 @@ export async function handleCardPayment(ctx) {
 
     await ctx.reply(t('card_payment_instructions', lang, {
       cardNumber,
+      amountRaw: toRial(uniqueAmount),
       amount: formatRials(uniqueAmount, lang),
-    }));
+    }), { parse_mode: 'HTML' });
     await ctx.reply(t('card_payment_exact_amount_notice', lang, {
       amount: formatRials(uniqueAmount, lang),
     }));
@@ -636,12 +699,13 @@ export async function handleAutoCardPayment(ctx) {
 
     await ctx.reply(t('card_payment_instructions', lang, {
       cardNumber,
+      amountRaw: toRial(uniqueAmount),
       amount: formatRials(uniqueAmount, lang),
     }), {
+      parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
           [{ text: t('btn_i_paid', lang), callback_data: `ipaid_${receipt._id}` }],
-          [{ text: t('btn_upload_receipt_manual', lang), callback_data: `cardpay_${planId}` }],
           [{ text: t('btn_cancel', lang), callback_data: 'main_menu' }],
         ],
       },
@@ -653,13 +717,28 @@ export async function handleAutoCardPayment(ctx) {
 }
 
 /**
- * The user confirms they transferred the money. We just acknowledge — actual
- * confirmation happens automatically when the matching bank SMS arrives.
+ * The user confirms they transferred the money. We acknowledge, then schedule
+ * two BullMQ delayed checks (30s and 60s) that fire and send the result when
+ * the SMS webhook has confirmed the payment. If still pending after 60s the
+ * user gets a "will notify when SMS arrives" message.
  */
 export async function handleIPaid(ctx) {
   const lang = ctx.lang || 'fa';
+  const receiptId = ctx.match[1];
   if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
+
   await smartReply(ctx, t('i_paid_ack', lang));
+
+  // Queue two delayed payment-status checks (30s and 60s from now).
+  // The job handler in queue/handlers.js will send the result message.
+  try {
+    const BullMQManager = (await import('../../queue/bullmq.js')).default;
+    const chatId = ctx.chat.id;
+    const jobData = { receiptId, chatId, lang, attempt: 1 };
+    await BullMQManager.addJob('default', 'check_payment', jobData, { delay: 30_000 });
+  } catch (err) {
+    logger.error({ err }, '[bot] handleIPaid: failed to schedule payment check');
+  }
 }
 
 const CLIENT_INSTRUCTION_KEYS = {

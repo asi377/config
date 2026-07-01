@@ -128,11 +128,14 @@ class PaymentService extends BaseService {
     const BotConfig = (await import('../models/BotConfig.js')).default;
     const botConfig = await BotConfig.getSingleton();
     const savedRegex = botConfig?.smsBankRegex || '';
-    const amount = (savedRegex && testSmsRegex(savedRegex, smsText)) || extractBankMelliAmount(smsText);
-    if (!amount) {
+    const amountRial = (savedRegex && testSmsRegex(savedRegex, smsText)) || extractBankMelliAmount(smsText);
+    if (!amountRial) {
       logger.warn({ smsPreview: smsText.slice(0, 100) }, '[sms-webhook] could not extract amount');
       return;
     }
+    // Bank SMS report Rial; receipts/plan prices are stored in Toman. Convert to
+    // Toman so the quoted amount and the SMS amount compare on the same scale.
+    const amount = Math.round(amountRial / 10);
 
     const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
     const receipt = await ReceiptRepository.findMatchingSms(amount, thirtyMinutesAgo);
@@ -231,8 +234,9 @@ class PaymentService extends BaseService {
     );
   }
 
+  // `amount` is stored Toman; bank/display figures are Rial (×10).
   _formatRials(amount) {
-    return `${amount.toLocaleString()} ریال`;
+    return `${(amount * 10).toLocaleString()} ریال`;
   }
 
   // === SMS C2C Gateway methods ===

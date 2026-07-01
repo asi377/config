@@ -68,6 +68,12 @@ const userSchema = new mongoose.Schema(
       enum: ['en', 'fa', 'ru'],
       default: 'fa',
     },
+    // Whether the user has explicitly picked a language (vs. the 'fa' default).
+    // Drives the first-contact trilingual welcome + language picker in /start.
+    languageChosen: {
+      type: Boolean,
+      default: false,
+    },
     currentResellerPlanId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ResellerPlan',

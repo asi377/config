@@ -155,6 +155,7 @@ export function createBot() {
   bot.action(/^checkout_confirm_(.+)$/,  userController.handleCheckoutConfirm);
   bot.action(/^cardpay_(.+)$/,           userController.handleCardPayment);
   bot.action(/^autocardpay_(.+)$/,       userController.handleAutoCardPayment);
+  bot.action('crypto_payment',           userController.handleCryptoPayment);
   bot.action(/^ipaid_(.+)$/,             userController.handleIPaid);
   bot.action(/^config_client_([a-z]+)_(.+)$/, userController.handleConfigClientPick);
   bot.action(/^extra_data_confirm_(\d+)_(.+)$/, userController.handleExtraDataConfirm);

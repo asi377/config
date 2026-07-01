@@ -184,6 +184,37 @@ export async function initializeDeps() {
     logger.info('[app] Seeded default force-subscribe channel (@hornet_ch, disabled)');
   }
 
+  // Seed the default superadmin so the panel is always accessible on first run,
+  // including on a fresh Docker MongoDB. Idempotent — skipped if already exists.
+  const Admin = (await import('./models/Admin.js')).default;
+  const existingAdmin = await Admin.findOne({ email: 'admin@hornet.com' });
+  if (!existingAdmin) {
+    await Admin.create({
+      email: 'admin@hornet.com',
+      password: 'admin123456',
+      displayName: 'Super Admin',
+      role: 'superadmin',
+      isActive: true,
+    });
+    logger.info('[app] Default admin seeded (admin@hornet.com / admin123456)');
+  }
+
+  // Seed auto-approve payment settings with safe defaults so auto card-to-card
+  // works out of the box. Only sets each key if it has never been set before.
+  const autoApproveKeys = {
+    'payment.autoApprove.enabled': true,
+    'payment.autoApprove.toleranceAmount': 100,
+    'payment.autoApprove.ceilingAmount': 5000000,
+    'payment.autoApprove.maxFraudScore': 80,
+  };
+  for (const [key, defaultVal] of Object.entries(autoApproveKeys)) {
+    const existing = await SettingModel.get(key, null);
+    if (existing === null) {
+      await SettingModel.set(key, defaultVal);
+    }
+  }
+  logger.info('[app] Auto-approve payment settings ensured');
+
   if (config.redis?.url) {
     try {
       await redisClient.connect();

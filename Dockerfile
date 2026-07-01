@@ -30,4 +30,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -fs http://localhost:3000/health || exit 1
 
-CMD ["node", "src/server.js"]
+CMD ["sh", "-c", "node src/server.js"]

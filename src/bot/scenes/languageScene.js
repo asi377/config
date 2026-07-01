@@ -23,6 +23,7 @@ languageScene.action(/^set_language_(en|fa|ru)$/, async (ctx) => {
   try {
     if (ctx.user) {
       ctx.user.language = newLang;
+      ctx.user.languageChosen = true;
       await ctx.user.save();
     }
     ctx.lang = newLang;

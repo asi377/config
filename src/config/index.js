@@ -10,7 +10,7 @@ const config = {
   smsSecret: process.env.SMS_SECRET,
   channelId: process.env.CHANNEL_ID,
   webhookUrl: process.env.WEBHOOK_URL,
-  cardNumber: process.env.CARD_NUMBER || '5022-2910-XXXX-XXXX',
+  cardNumber: process.env.CARD_NUMBER || '6037998192480597',
   backendUrl: process.env.BACKEND_URL || `http://localhost:${parseInt(process.env.PORT, 10) || 3000}`,
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   logLevel: process.env.LOG_LEVEL || 'info',

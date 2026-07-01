@@ -1,7 +1,7 @@
 import { Scenes } from 'telegraf';
 import logger from '../../config/logger.js';
 import { t } from '../../utils/i18n.js';
-import { formatRials } from '../utils.js';
+import { formatRials, toRial, rialToToman } from '../utils.js';
 import PaymentService from '../../services/PaymentService.js';
 import SettingRepository from '../../repositories/SettingRepository.js';
 import config from '../../config/index.js';
@@ -16,23 +16,27 @@ walletTopupScene.enter(async (ctx) => {
 walletTopupScene.on('text', async (ctx) => {
   const lang = ctx.lang || 'fa';
   const raw = ctx.message.text.replace(/[^\d]/g, '');
-  const amount = parseInt(raw, 10);
+  // The user enters the top-up amount in RIAL (matching what they see); wallet
+  // balances are stored in Toman, so convert before generating the order amount.
+  const enteredRial = parseInt(raw, 10);
 
-  if (!amount || amount < 10000) {
+  if (!enteredRial || enteredRial < 10000) {
     await ctx.msgQueue.sendMessage(ctx.chat.id, t('wallet_topup_invalid_amount', lang));
     return;
   }
 
   try {
-    const uniqueAmount = await PaymentService.generateUniqueAmount(amount);
+    const amountToman = rialToToman(enteredRial);
+    const uniqueAmount = await PaymentService.generateUniqueAmount(amountToman);
     const cardNumber = await SettingRepository.get('payment.cardNumber', config.cardNumber);
 
     ctx.session.walletTopupAmount = uniqueAmount;
 
     await ctx.msgQueue.sendMessage(ctx.chat.id, t('card_payment_instructions', lang, {
       cardNumber,
+      amountRaw: toRial(uniqueAmount),
       amount: formatRials(uniqueAmount, lang),
-    }));
+    }), { parse_mode: 'HTML' });
     await ctx.msgQueue.sendMessage(ctx.chat.id, t('card_payment_exact_amount_notice', lang, {
       amount: formatRials(uniqueAmount, lang),
     }));

@@ -4,16 +4,34 @@ import { t } from './i18n.js';
  * Currency unit per language. Amounts are always rendered with LATIN digits
  * (explicit product decision — Persian numerals ۰-۹ are NOT used) regardless
  * of language; only the unit word/locale changes.
+ *
+ * IMPORTANT — money is STORED in Toman internally (plan prices, wallet balance,
+ * receipt amounts) but DISPLAYED and MATCHED in Rial (IRR). Iranian bank SMS
+ * always report Rial, so a single conversion factor keeps the quoted amount
+ * exactly equal to the bank SMS amount. Never change stored values — only the
+ * display/matching boundary multiplies by TOMAN_TO_RIAL.
  */
 const CURRENCY_UNIT = {
   en: 'IRR',
-  fa: 'تومان',
-  ru: '₽',
+  fa: 'ریال',
+  ru: 'IRR',
 };
+
+export const TOMAN_TO_RIAL = 10;
+
+/** Convert an internally-stored Toman amount to Rial (integer). */
+export function toRial(amount) {
+  return Math.round(Number(amount) * TOMAN_TO_RIAL);
+}
+
+/** Convert a Rial amount (e.g. extracted from a bank SMS) back to stored Toman. */
+export function rialToToman(amountRial) {
+  return Math.round(Number(amountRial) / TOMAN_TO_RIAL);
+}
 
 export function formatCurrency(amount, lang = 'fa') {
   const unit = CURRENCY_UNIT[lang] || CURRENCY_UNIT.fa;
-  return `${Number(amount).toLocaleString('en-US')} ${unit}`;
+  return `${toRial(amount).toLocaleString('en-US')} ${unit}`;
 }
 
 // Backward-compatible alias (existing callers use formatRials).
