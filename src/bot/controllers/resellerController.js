@@ -5,30 +5,78 @@ import ResellerPlanRepository from '../../repositories/ResellerPlanRepository.js
 import SubscriptionRepository from '../../repositories/SubscriptionRepository.js';
 
 /**
- * Entry point for users who are NOT yet a reseller — shows the list of
- * available reseller tiers to apply to.
+ * Unified referral + reseller entry (option C): shows the user's referral data
+ * (invite link, referral count, earnings) AND the reseller tiers/plans they can
+ * apply to — all on one screen, with inline buttons only.
  */
 export async function handleResellerMenu(ctx) {
   const lang = ctx.lang || 'fa';
+  if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
   try {
-    if (ctx.user?.isReseller) {
-      return handleResellerMiniPanel(ctx);
+    const User = (await import('../../models/User.js')).default;
+    const user = await User.findOne({ telegramId: String(ctx.from.id) });
+    if (!user) { await ctx.reply(t('error_generic_request', lang)); return; }
+
+    const referralCount = await User.countDocuments({ referredBy: user._id });
+    const username = ctx.botInfo?.username;
+    const link = username
+      ? `https://t.me/${username}?start=${user.referralCode}`
+      : user.referralCode;
+
+    // Top section: referral data.
+    const lines = [
+      t('referral_panel_title', lang),
+      '',
+      t('referral_panel_link', lang, { link }),
+      t('referral_panel_count', lang, { count: referralCount }),
+      t('referral_panel_earnings', lang, { commission: user.referralCommission || 0 }),
+    ];
+
+    // Referral action buttons.
+    const rows = [
+      [{ text: t('btn_referral_invite_link', lang), callback_data: 'referral_invite_link' }],
+      [
+        { text: t('btn_referral_my_referrals', lang), callback_data: 'referral_my_referrals' },
+        { text: t('btn_referral_earnings', lang), callback_data: 'referral_earnings' },
+      ],
+    ];
+
+    // Bottom section: reseller plans to choose from (or current status).
+    if (user.isReseller) {
+      lines.push('', t('reseller_panel_active', lang));
+      rows.push([{ text: t('btn_reseller_panel', lang), callback_data: 'reseller_panel' }]);
+    } else if (user.resellerApplicationStatus === 'pending') {
+      lines.push('', t('reseller_application_pending', lang));
+    } else {
+      const plans = await ResellerPlanRepository.findActive();
+      if (plans.length) {
+        lines.push('', t('reseller_menu_title', lang));
+        for (const p of plans) {
+          const cap = (p.maxActiveAccounts === null || p.maxActiveAccounts === undefined)
+            ? t('reseller_cap_unlimited', lang)
+            : String(p.maxActiveAccounts);
+          rows.push([{
+            text: t('reseller_tier_item', lang, {
+              name: p.displayName, cap, discount: p.discountPercent, fee: p.applicationFee || 0,
+            }),
+            callback_data: `reseller_apply_${p._id}`,
+          }]);
+        }
+      }
     }
 
-    if (ctx.user?.resellerApplicationStatus === 'pending') {
-      const editFn = ctx.callbackQuery ? 'editMessageText' : 'reply';
-      await ctx[editFn](t('reseller_application_pending', lang), {
-        reply_markup: mainMenuKeyboard(lang, ctx.user).reply_markup,
-      }).catch(() => ctx.reply(t('reseller_application_pending', lang), {
-        reply_markup: mainMenuKeyboard(lang, ctx.user).reply_markup,
-      }));
-      return;
-    }
+    rows.push([{ text: t('btn_back_main_menu', lang), callback_data: 'main_menu' }]);
 
-    const plans = await ResellerPlanRepository.findActive();
-    await ctx.editMessageText(t('reseller_menu_title', lang), {
-      reply_markup: generateResellerMenuKeyboard(lang, plans).reply_markup,
-    });
+    const editFn = ctx.callbackQuery ? 'editMessageText' : 'reply';
+    await ctx[editFn](lines.join('\n'), {
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: rows },
+    }).catch(() => ctx.reply(lines.join('\n'), {
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: rows },
+    }));
   } catch (err) {
     logger.error({ err }, '[bot] handleResellerMenu error');
     await ctx.reply(t('error_generic_request', lang));

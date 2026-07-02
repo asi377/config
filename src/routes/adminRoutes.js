@@ -37,9 +37,13 @@ router.get('/users', requirePermission('users.read'), async (req, res, next) => 
     const filter = {};
     if (req.query.role) filter.role = req.query.role;
     if (req.query.search) {
+      const s = req.query.search;
       filter.$or = [
-        { telegramId: { $regex: req.query.search, $options: 'i' } },
-        { referralCode: { $regex: req.query.search, $options: 'i' } },
+        { telegramId: { $regex: s, $options: 'i' } },
+        { referralCode: { $regex: s, $options: 'i' } },
+        { firstName: { $regex: s, $options: 'i' } },
+        { lastName: { $regex: s, $options: 'i' } },
+        { username: { $regex: s, $options: 'i' } },
       ];
     }
 
@@ -115,6 +119,93 @@ router.get('/users/:id/transactions', requirePermission('payments.read'), async 
   } catch (err) { next(err); }
 });
 
+// Full purchase history for a user: all subscriptions (incl. free trials) + receipts.
+router.get('/users/:id/purchases', requirePermission('users.read'), async (req, res, next) => {
+  try {
+    const Subscription = (await import('../models/Subscription.js')).default;
+    const Receipt = (await import('../models/Receipt.js')).default;
+    const [subscriptions, receipts] = await Promise.all([
+      Subscription.find({ ownerId: req.params.id })
+        .populate('planId', 'title basePrice baseVolumeGB durationDays isTrial')
+        .sort({ createdAt: -1 }).limit(100).lean(),
+      Receipt.find({ userId: req.params.id })
+        .populate('planId', 'title')
+        .sort({ createdAt: -1 }).limit(100).lean(),
+    ]);
+    res.json({ success: true, data: { subscriptions, receipts } });
+  } catch (err) { next(err); }
+});
+
+// Quick action: manually activate a plan for a user (counts as revenue via an
+// approved manual receipt). Optionally charge the user's wallet.
+router.post('/users/:id/activate-plan', requirePermission('users.write'), async (req, res, next) => {
+  try {
+    const { planId, chargeWallet = false } = req.body;
+    if (!planId) return res.status(400).json({ success: false, error: 'planId is required' });
+
+    const User = (await import('../models/User.js')).default;
+    const Plan = (await import('../models/Plan.js')).default;
+    const Receipt = (await import('../models/Receipt.js')).default;
+    const subscriptionService = (await import('../services/SubscriptionService.js')).default;
+    const ProvisioningService = (await import('../services/ProvisioningService.js')).default;
+    const ConfigDeliveryService = (await import('../services/ConfigDeliveryService.js')).default;
+    const { getPlanPrice } = await import('../utils/pricing.js');
+    const { getBotInstance } = await import('../bot/botInstance.js');
+
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+    const plan = await Plan.findById(planId);
+    if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+
+    const priceToman = getPlanPrice(plan, 'fa').amount;
+
+    // Provision without touching wallet (unless explicitly charging).
+    let subscription = await subscriptionService.forceCreateSubscription(user.telegramId, planId);
+    subscription = await subscriptionService.activateSubscription(subscription._id);
+    if (chargeWallet && priceToman > 0) {
+      user.walletBalance = Math.max(0, (user.walletBalance || 0) - priceToman);
+      await user.save();
+    }
+
+    // Record an approved manual receipt so this manual sale shows up in revenue.
+    const receipt = await Receipt.create({
+      userId: user._id, planId, amount: priceToman, method: 'manual',
+      status: 'approved', gateway: 'admin_manual', reviewedBy: req.adminId,
+      subscriptionId: subscription._id, userClaimedPaid: true,
+    });
+
+    // Provision the tunnel + deliver configs to the user (best-effort).
+    try {
+      await ProvisioningService.provisionTunnelOnNode(subscription, plan, user);
+      const bot = getBotInstance();
+      if (bot) await ConfigDeliveryService.deliverForReceipt(bot.telegram, receipt._id, { requireClaim: false });
+    } catch (err) {
+      logger.warn?.({ err }, '[admin] manual activation provisioning/delivery failed');
+    }
+
+    await AuditLogRepository.create({
+      adminId: req.adminId, action: 'user.manual_activate', targetType: 'User', targetId: user._id,
+      newValue: { planId, priceToman, chargeWallet },
+    });
+    res.json({ success: true, data: { subscriptionId: subscription._id, receiptId: receipt._id } });
+  } catch (err) { next(err); }
+});
+
+// Quick action: reactivate a user's free-trial eligibility (per user).
+router.post('/users/:id/reactivate-trial', requirePermission('users.write'), async (req, res, next) => {
+  try {
+    const User = (await import('../models/User.js')).default;
+    const user = await User.findByIdAndUpdate(
+      req.params.id, { $set: { freeTrialClaimedAt: null } }, { new: true },
+    );
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+    await AuditLogRepository.create({
+      adminId: req.adminId, action: 'user.reactivate_trial', targetType: 'User', targetId: user._id,
+    });
+    res.json({ success: true, data: { telegramId: user.telegramId, freeTrialClaimedAt: null } });
+  } catch (err) { next(err); }
+});
+
 // ==================== SERVERS ====================
 router.get('/servers', requirePermission('servers.read'), AdminServerController.getAllServers);
 router.post('/servers', requirePermission('servers.write'), AdminServerController.addServer);
@@ -186,17 +277,21 @@ router.get('/bot-config', requirePermission('settings.read'), async (req, res, n
 router.put('/bot-config', requirePermission('settings.write'), async (req, res, next) => {
   try {
     const BotConfig = (await import('../models/BotConfig.js')).default;
-    const { welcomeText, smsBankRegex, cryptoPaymentEnabled, botMenus } = req.body;
+    const {
+      welcomeText, smsBankRegex, cryptoPaymentEnabled, botMenus,
+      deliveryTemplate, botCommands, botDescription, botShortDescription,
+    } = req.body;
     const config = await BotConfig.getSingleton();
-    if (welcomeText !== undefined) {
-      // welcomeText is now a per-language object ({ en, fa, ru }); merge so a
-      // partial payload (e.g. only one language tab) doesn't wipe the others.
-      if (typeof welcomeText === 'string') {
-        config.welcomeText = { ...config.welcomeText?.toObject?.(), fa: welcomeText };
-      } else {
-        config.welcomeText = { ...config.welcomeText?.toObject?.(), ...welcomeText };
-      }
-    }
+    // Localized fields are per-language objects ({ en, fa, ru }); merge partial
+    // payloads so editing one language tab doesn't wipe the others.
+    const mergeLocalized = (cur, next) => (typeof next === 'string'
+      ? { ...cur?.toObject?.(), fa: next }
+      : { ...cur?.toObject?.(), ...next });
+    if (welcomeText !== undefined) config.welcomeText = mergeLocalized(config.welcomeText, welcomeText);
+    if (deliveryTemplate !== undefined) config.deliveryTemplate = mergeLocalized(config.deliveryTemplate, deliveryTemplate);
+    if (botDescription !== undefined) config.botDescription = mergeLocalized(config.botDescription, botDescription);
+    if (botShortDescription !== undefined) config.botShortDescription = mergeLocalized(config.botShortDescription, botShortDescription);
+    if (botCommands !== undefined) config.botCommands = botCommands;
     if (smsBankRegex !== undefined) config.smsBankRegex = smsBankRegex;
     if (cryptoPaymentEnabled !== undefined) config.cryptoPaymentEnabled = cryptoPaymentEnabled;
     if (botMenus !== undefined) config.botMenus = botMenus;
@@ -207,6 +302,46 @@ router.put('/bot-config', requirePermission('settings.write'), async (req, res, 
       newValue: { welcomeText, smsBankRegex, cryptoPaymentEnabled, botMenus: botMenus?.length },
     });
     res.json({ success: true, data: config });
+  } catch (err) { next(err); }
+});
+
+// ==================== FORCE-JOIN (mandatory channels) ====================
+router.get('/force-join', requirePermission('settings.read'), async (req, res, next) => {
+  try {
+    const SettingRepository = (await import('../repositories/SettingRepository.js')).default;
+    const enabled = await SettingRepository.get('forceSubscribe.enabled', false);
+    const channels = await SettingRepository.get('forceSubscribe.channels', []);
+    res.json({ success: true, data: { enabled, channels } });
+  } catch (err) { next(err); }
+});
+
+router.put('/force-join', requirePermission('settings.write'), async (req, res, next) => {
+  try {
+    const SettingRepository = (await import('../repositories/SettingRepository.js')).default;
+    const { enabled, channels } = req.body;
+    if (enabled !== undefined) await SettingRepository.set('forceSubscribe.enabled', !!enabled);
+    if (Array.isArray(channels)) {
+      // Normalise: each channel needs an id; title/inviteLink optional.
+      const clean = channels
+        .filter((c) => c && c.id)
+        .map((c) => ({ id: String(c.id).trim(), title: c.title || '', inviteLink: c.inviteLink || '' }));
+      await SettingRepository.set('forceSubscribe.channels', clean);
+    }
+    const enabledNow = await SettingRepository.get('forceSubscribe.enabled', false);
+    const channelsNow = await SettingRepository.get('forceSubscribe.channels', []);
+    res.json({ success: true, data: { enabled: enabledNow, channels: channelsNow } });
+  } catch (err) { next(err); }
+});
+
+// Apply the configured bot commands / description to Telegram (setMyCommands etc.)
+router.post('/bot-commands/apply', requirePermission('settings.write'), async (req, res, next) => {
+  try {
+    const { applyBotCommands } = await import('../bot/applyBotCommands.js');
+    const { getBotInstance } = await import('../bot/botInstance.js');
+    const bot = getBotInstance();
+    if (!bot) return res.status(503).json({ success: false, error: 'Bot not running' });
+    const result = await applyBotCommands(bot);
+    res.json({ success: true, data: result });
   } catch (err) { next(err); }
 });
 

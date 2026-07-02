@@ -20,8 +20,13 @@ export const togglePlan     = (id)     => api.patch(`/admin/plans/${id}/toggle`)
 // ── Users ─────────────────────────────────────────────────────────────────────
 export const getUsers       = (p=1)    => api.get(`/admin/users?page=${p}`);
 export const getUserDetail  = (id)     => api.get(`/admin/users/${id}`);
-export const banUser        = (id)     => api.patch(`/admin/users/${id}/ban`);
+export const banUser        = (id)     => api.post(`/admin/users/${id}/ban`);
 export const resetBandwidth = (id)     => api.post(`/admin/users/${id}/reset-bandwidth`);
+// Quick actions + history
+export const getUserPurchases = (id)   => api.get(`/admin/users/${id}/purchases`);
+export const walletTopup    = (id, amount, description) => api.post(`/admin/users/${id}/wallet`, { amount, description });
+export const activateUserPlan = (id, planId, chargeWallet=false) => api.post(`/admin/users/${id}/activate-plan`, { planId, chargeWallet });
+export const reactivateTrial = (id)    => api.post(`/admin/users/${id}/reactivate-trial`);
 
 // ── Finance ───────────────────────────────────────────────────────────────────
 export const getFinance     = ()       => api.get('/admin/finance');
@@ -33,6 +38,15 @@ export const rejectReceipt  = (id)     => api.post(`/admin/receipts/${id}/reject
 // ── Settings ──────────────────────────────────────────────────────────────────
 export const getSettings    = ()       => api.get('/admin/settings');
 export const updateSetting  = (k, v)   => api.put(`/admin/settings/${k}`, { value: v });
+
+// ── Bot config / builder ────────────────────────────────────────────────────
+export const getBotConfig   = ()       => api.get('/admin/bot-config');
+export const updateBotConfig= (data)   => api.put('/admin/bot-config', data);
+export const applyBotCommands = ()     => api.post('/admin/bot-commands/apply');
+
+// ── Force-join (mandatory channels) ──────────────────────────────────────────
+export const getForceJoin   = ()       => api.get('/admin/force-join');
+export const updateForceJoin= (data)   => api.put('/admin/force-join', data);
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
 export const getAnalytics   = ()       => api.get('/admin/analytics');

@@ -2,13 +2,26 @@ import BaseService from '../shared/BaseService.js';
 import UserRepository from '../repositories/UserRepository.js';
 
 class UserService extends BaseService {
-  resolveUser = this.wrapMethod(async (telegramId, referralCode) => {
+  resolveUser = this.wrapMethod(async (telegramId, referralCode, profile = null) => {
     let isNew = false;
     let user = await UserRepository.findByTelegramId(telegramId);
 
     if (!user) {
       isNew = true;
       user = await UserRepository.create({ telegramId });
+    }
+
+    // Keep the human name/username fresh from Telegram (for the admin panel).
+    if (profile) {
+      const first = profile.first_name || '';
+      const last = profile.last_name || '';
+      const uname = profile.username || '';
+      if (user.firstName !== first || user.lastName !== last || user.username !== uname) {
+        user.firstName = first;
+        user.lastName = last;
+        user.username = uname;
+        await user.save();
+      }
     }
 
     if (isNew && referralCode && !user.referredBy) {

@@ -254,5 +254,14 @@
   "guide_ios_body": "🍎 *راهنمای اتصال در آیفون (iOS)*\n\n📥 *۱) نصب برنامه* (یکی از این‌ها):\n• Shadowrocket (پولی): https://apps.apple.com/app/shadowrocket/id932747118\n• Stash: https://apps.apple.com/app/stash/id1596063349\n\n🔗 *۲) کپی لینک اشتراک*\nلینک اشتراک را از بخش «سرویس‌های من» کپی کنید.\n\n➕ *۳) افزودن اشتراک*\nدر Shadowrocket: دکمه + بالا ← نوع Subscription ← لینک را وارد کنید.\n\n🟢 *۴) فعال‌سازی پروفایل*\nاشتراک را انتخاب و اتصال (VPN) را روشن کنید.\n\n✅ *۵) اتصال*\nدر اولین بار اجازه افزودن VPN را بدهید.",
   "guide_windows_body": "🪟 *راهنمای اتصال در ویندوز*\n\n📥 *۱) نصب برنامه* (یکی از این‌ها):\n• Hiddify Next: https://github.com/hiddify/hiddify-next/releases/latest\n• v2rayN: https://github.com/2dust/v2rayN/releases/latest\n\n🔗 *۲) کپی لینک اشتراک*\nلینک اشتراک را کپی کنید.\n\n➕ *۳) وارد کردن لینک*\nدر v2rayN: Servers ← «Import bulk URL from clipboard».\nدر Hiddify: «New Profile» ← «Add from clipboard».\n\n🔄 *۴) بروزرسانی و انتخاب نود*\nاشتراک را Update کنید و یک سرور را انتخاب کنید.\n\n✅ *۵) اتصال*\nدکمه اتصال را بزنید.",
   "btn_show_qr": "📷 نمایش QR",
-  "sub_qr_caption": "📷 این QR را در برنامه VPN اسکن کنید یا لینک زیر را کپی کنید:"
+  "sub_qr_caption": "📷 این QR را در برنامه VPN اسکن کنید یا لینک زیر را کپی کنید:",
+  "config_delivery_header": "✅ سرویس شما آماده است!\n\n📱 کانفیگ‌های زیر را کپی و در برنامه VPN خود وارد کنید:",
+  "config_delivery_no_nodes": "⚠️ در حال حاضر سرور فعالی موجود نیست. لطفاً با پشتیبانی تماس بگیرید.",
+  "config_delivery_footer": "برای راهنمای اتصال یا مشاهده سرویس‌ها، از دکمه‌های زیر استفاده کنید. 👇",
+  "referral_panel_title": "🤝 دعوت دوستان و کسب درآمد",
+  "referral_panel_link": "🔗 لینک دعوت شما:\n`{{link}}`",
+  "referral_panel_count": "👥 تعداد زیرمجموعه: {{count}} نفر",
+  "referral_panel_earnings": "💰 درآمد کل: {{commission}} تومان",
+  "reseller_panel_active": "⭐ شما نماینده فعال هستید.",
+  "btn_reseller_panel": "📊 پنل نمایندگی من"
 }

@@ -81,6 +81,23 @@ const receiptSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Subscription provisioned for this receipt (set on approval) — lets the
+    // "I paid" poll / SMS-approve find the tunnel to deliver configs.
+    subscriptionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subscription',
+      default: null,
+    },
+    // Card-to-card gating: the user must tap "I paid" before configs are sent.
+    userClaimedPaid: {
+      type: Boolean,
+      default: false,
+    },
+    // Idempotency guard so configs are delivered exactly once.
+    configDeliveredAt: {
+      type: Date,
+      default: null,
+    },
     fraudScore: {
       type: Number,
       default: null,

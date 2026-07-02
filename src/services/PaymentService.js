@@ -101,6 +101,15 @@ class PaymentService extends BaseService {
         subscription = await subscriptionService.createSubscription(approvedUser._id, provisionPlanId);
         subscription = await subscriptionService.activateSubscription(subscription._id);
 
+        // Link the subscription to the receipt so config delivery (the "I paid"
+        // poll, the SMS-approve path, or a manual re-check) can find the tunnel.
+        try {
+          receipt.subscriptionId = subscription._id;
+          await receipt.save();
+        } catch (err) {
+          logger.warn({ err, receiptId: receipt._id }, '[payment] could not link subscription to receipt');
+        }
+
         const plan = await PlanRepository.findById(provisionPlanId);
         try {
           const provisionResult = await ProvisioningService.provisionTunnelOnNode(subscription, plan, approvedUser);
@@ -180,8 +189,23 @@ class PaymentService extends BaseService {
               auto: true, fraudScore: fraudScoreVal,
             });
 
+            // Card-to-card gating: only push configs if the user already tapped
+            // "I paid". If they haven't yet, the receipt is approved and the
+            // configs are delivered the moment they do (handleIPaid), so nothing
+            // is ever sent prematurely.
             if (_botInstance && result.user?.telegramId) {
-              await this._notifyUserOfDelivery(_botInstance.telegram, result);
+              const freshReceipt = await ReceiptRepository.findById(receipt._id);
+              const isCard = ['card_auto', 'card_manual'].includes(freshReceipt?.gateway)
+                || ['auto', 'manual'].includes(freshReceipt?.method);
+              if (isCard && !freshReceipt?.userClaimedPaid) {
+                logger.info({ receiptId: receipt._id }, '[sms-webhook] approved; holding config until user taps "I paid"');
+              } else {
+                const ConfigDeliveryService = (await import('./ConfigDeliveryService.js')).default;
+                const delivered = await ConfigDeliveryService.deliverForReceipt(
+                  _botInstance.telegram, receipt._id, { requireClaim: false },
+                );
+                if (!delivered) await this._notifyUserOfDelivery(_botInstance.telegram, result);
+              }
             }
           }
         }

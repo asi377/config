@@ -13,6 +13,7 @@ import PlanRepository from '../repositories/PlanRepository.js';
 import SubscriptionRepository from '../repositories/SubscriptionRepository.js';
 import ServerRepository from '../repositories/ServerRepository.js';
 import { calculateRank } from '../utils/formatters.js';
+import { getPlanPrice } from '../utils/pricing.js';
 
 const GB = 1073741824;
 
@@ -50,12 +51,15 @@ class SubscriptionService extends BaseService {
         const user = await UserRepository.findById(userId, { session });
         if (!user) throw new NotFoundError('User');
 
-        let effectivePrice = plan.basePrice;
+        // Wallet payment is Persian-only (Toman). Use the fa price (falls back
+        // to basePrice) as the wallet-charge base.
+        const basePriceToman = getPlanPrice(plan, 'fa').amount;
+        let effectivePrice = basePriceToman;
         if (user.isReseller && user.currentResellerPlanId) {
           const ResellerPlanRepository = (await import('../repositories/ResellerPlanRepository.js')).default;
           const resellerPlan = await ResellerPlanRepository.findById(user.currentResellerPlanId, { session });
           if (resellerPlan) {
-            effectivePrice = Math.round(plan.basePrice * (1 - resellerPlan.discountPercent / 100));
+            effectivePrice = Math.round(basePriceToman * (1 - resellerPlan.discountPercent / 100));
           }
         }
 

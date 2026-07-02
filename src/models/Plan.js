@@ -40,6 +40,15 @@ const planSchema = new mongoose.Schema(
       required: [true, 'Base price is required'],
       min: [0, 'Price cannot be negative'],
     },
+    // Per-language pricing (managed from the admin panel):
+    //   fa → Toman (Iranian users, card/wallet)
+    //   en → USD, ru → USD (non-Iranian users, crypto)
+    // fa falls back to basePrice when null. See src/utils/pricing.js.
+    prices: {
+      fa: { type: Number, default: null, min: [0, 'Price cannot be negative'] },
+      en: { type: Number, default: null, min: [0, 'Price cannot be negative'] },
+      ru: { type: Number, default: null, min: [0, 'Price cannot be negative'] },
+    },
     baseVolumeGB: {
       type: Number,
       required: [true, 'Base volume is required'],

@@ -10,6 +10,7 @@
 
 import { Markup } from 'telegraf';
 import { t } from '../utils/i18n.js';
+import { formatPlanPrice } from '../utils/pricing.js';
 
 // ─── Shared: persistent "Change Language" row ────────────────────────────────
 /**
@@ -36,10 +37,8 @@ export function mainMenuKeyboard(lang, user) {
   ];
 
   if (user) {
-    rows.push([Markup.button.callback(
-      t('btn_reseller', lang),
-      user.isReseller ? 'reseller_panel' : 'reseller_menu',
-    )]);
+    // Unified referral + reseller entry (handleResellerMenu) for everyone.
+    rows.push([Markup.button.callback(t('btn_reseller', lang), 'reseller_menu')]);
   }
 
   rows.push(changeLanguageRow());
@@ -261,10 +260,11 @@ export function generateBroadcastKeyboard(lang) {
 // ─── Dynamic: plan list ─────────────────────────────────────────────────────
 /**
  * @param {string} lang
- * @param {Array<{_id: string, title: string, basePrice: number, isActive: boolean}>} plans
- * @param {function} formatRials  - formatter from utils, takes (amount, lang)
+ * @param {Array<object>} plans
+ * Prices are shown per-language via getPlanPrice/formatPlanPrice (fa→Toman,
+ * en/ru→USD). The legacy `formatRials` param is accepted but ignored.
  */
-export function generatePlansKeyboard(lang, plans, formatRials) {
+export function generatePlansKeyboard(lang, plans, _formatRials) {
   if (!plans || plans.length === 0) {
     return Markup.inlineKeyboard([
       [Markup.button.callback(t('no_plans_available', lang), 'buy_renew')],
@@ -275,7 +275,7 @@ export function generatePlansKeyboard(lang, plans, formatRials) {
   const rows = plans.map(p => {
     const statusIcon = p.isActive ? '✅' : '❌';
     return [Markup.button.callback(
-      `${statusIcon} ${p.title} — ${formatRials(p.basePrice, lang)}`,
+      `${statusIcon} ${p.title} — ${formatPlanPrice(p, lang)}`,
       `select_plan_${p._id}`,
     )];
   });

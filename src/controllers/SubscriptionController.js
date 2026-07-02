@@ -14,6 +14,7 @@ import TunnelConfigRepository from '../repositories/TunnelConfigRepository.js';
 import SubscriptionRepository from '../repositories/SubscriptionRepository.js';
 import ServerRepository from '../repositories/ServerRepository.js';
 import SubscriptionBuilder from '../services/subscription/subscriptionBuilder.js';
+import { buildProxies } from '../services/subscription/proxyBuilder.js';
 import logger from '../config/logger.js';
 
 class SubscriptionController {
@@ -87,60 +88,9 @@ class SubscriptionController {
         });
       }
 
-      // 4. Build proxy objects from each server, honoring the transport each
-      //    node actually serves (metadata.security / network / protocols) so the
-      //    emitted share-link matches the running Xray inbound and connects.
-      //    - security: 'reality' | 'tls' | 'none'  (default inferred)
-      //    - protocols: extra inbounds the node also serves (trojan/vmess)
-      const proxies = [];
-      for (const server of healthyServers) {
-        const host = server.domain || server.ipAddress;
-        const port = server.port;
-        const tag  = server.name || `${host}-${port}`;
-        const meta = server.metadata || {};
-        const security = meta.security || (meta.realityPublicKey ? 'reality' : 'tls');
-        const network  = meta.network || 'tcp';
-
-        const vless = {
-          type:       'vless',
-          address:    host,
-          port,
-          uuid,
-          network,
-          encryption: 'none',
-          remark:     `${tag}-VLESS`,
-        };
-        if (security === 'reality') {
-          vless.tls         = true;
-          vless.fingerprint = meta.fingerprint || 'chrome';
-          vless.sni         = meta.sni || host;
-          vless.publicKey   = meta.realityPublicKey || '';
-          vless.shortId     = meta.realityShortId || '';
-          if (meta.flow) vless.flow = meta.flow;
-        } else if (security === 'tls') {
-          vless.tls         = true;
-          vless.fingerprint = meta.fingerprint || 'chrome';
-          vless.sni         = meta.sni || host;
-        } else {
-          vless.tls = false; // plain transport (local/dev node)
-        }
-        proxies.push(vless);
-
-        // Only advertise additional protocols the node actually serves.
-        const protocols = Array.isArray(meta.protocols) ? meta.protocols : [];
-        if (protocols.includes('trojan')) {
-          proxies.push({
-            type: 'trojan', address: host, port, password: uuid,
-            tls: security !== 'none', sni: meta.sni || host, remark: `${tag}-Trojan`,
-          });
-        }
-        if (protocols.includes('vmess')) {
-          proxies.push({
-            type: 'vmess', address: host, port, uuid,
-            tls: security === 'tls', network, remark: `${tag}-VMess`,
-          });
-        }
-      }
+      // 4. Build proxy objects from each server via the shared builder (also used
+      //    by the bot's direct-config delivery, so they never diverge).
+      const proxies = buildProxies(healthyServers, uuid);
 
       // 5. Render via the modular builder
       const result = SubscriptionBuilder.render(

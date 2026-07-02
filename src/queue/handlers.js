@@ -41,15 +41,12 @@ export function registerJobHandlers() {
       const receipt = await Receipt.findById(receiptId).lean();
       if (!receipt) return;
 
-      if (['approved', 'auto_approved'].includes(receipt.status)) {
-        // Already confirmed — look up tunnel to send the config link.
-        const { default: TunnelConfig } = await import('../models/TunnelConfig.js');
-        const tunnel = await TunnelConfig.findOne({ subscriptionId: receipt.subscriptionId }).lean();
-        const subLink = tunnel ? `${config.backendUrl}/sub/${tunnel.uuid}` : null;
-        const msg = subLink
-          ? t('payment_confirmed_with_link', lang, { link: subLink })
-          : t('payment_confirmed', lang);
-        await bot.telegram.sendMessage(chatId, msg);
+      if (['approved', 'auto_approved', 'paid'].includes(receipt.status)) {
+        // Confirmed — deliver the DIRECT configs (idempotent; gated on I-paid,
+        // which is already true because this poll is scheduled from handleIPaid).
+        await bot.telegram.sendMessage(chatId, t('payment_confirmed', lang));
+        const { default: ConfigDeliveryService } = await import('../services/ConfigDeliveryService.js');
+        await ConfigDeliveryService.deliverForReceipt(bot.telegram, receiptId);
         return;
       }
 

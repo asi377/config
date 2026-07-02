@@ -23,6 +23,14 @@ process.on('uncaughtException', (err) => {
  * down the process. Retries with backoff; each attempt's rejection is caught.
  */
 function launchBotWithRetry(bot, attempt = 1) {
+  // Apply the command menu + description once (the pre-start "/" menu + the
+  // "What can this bot do?" text). Independent of polling; non-fatal on failure.
+  if (attempt === 1) {
+    import('./bot/applyBotCommands.js')
+      .then(({ applyBotCommands }) => applyBotCommands(bot))
+      .catch((err) => logger.warn({ err: err?.message }, '[server] applyBotCommands failed'));
+  }
+
   bot.launch()
     .then(() => logger.info('[server] Telegram bot started'))
     .catch((err) => {

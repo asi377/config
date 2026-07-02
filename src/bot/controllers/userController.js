@@ -9,6 +9,7 @@ import {
   mainReplyKeyboard,
 } from '../keyboards.js';
 import PlanRepository from '../../repositories/PlanRepository.js';
+import { getPlanPrice, formatPlanPrice } from '../../utils/pricing.js';
 import PaymentService from '../../services/PaymentService.js';
 import SettingRepository from '../../repositories/SettingRepository.js';
 import SubscriptionRepository from '../../repositories/SubscriptionRepository.js';
@@ -421,17 +422,19 @@ export async function handleFreeTrial(ctx) {
     });
 
     const activated = await subscriptionService.activateSubscription(subscription._id);
-    await ProvisioningService.provisionTunnelOnNode(activated, trialPlan, user);
+    const { tunnelConfig } = await ProvisioningService.provisionTunnelOnNode(activated, trialPlan, user);
 
     user.freeTrialClaimedAt = new Date();
     await user.save();
 
-    // Deliver the full, professional payload (plan, status, remaining volume,
-    // expiry, and sub-link) rather than a bare link.
-    const detailSub = await Subscription.findById(subscription._id).populate('planId', 'title').lean();
-    const detail = await buildSubscriptionDetail(detailSub, lang);
-    await ctx.reply(`${t('free_trial_activated_header', lang)}\n\n${detail}`, {
-      parse_mode: 'Markdown',
+    // Deliver DIRECT configs (not a sub-link) for the trial, then a footer with
+    // the connection guide + "my subscriptions" buttons.
+    await ctx.reply(t('free_trial_activated_header', lang));
+    const ConfigDeliveryService = (await import('../../services/ConfigDeliveryService.js')).default;
+    await ConfigDeliveryService.deliverByUuid(ctx.telegram, ctx.from.id, tunnelConfig.uuid, {
+      lang, sub: activated,
+    });
+    await ctx.reply(t('config_delivery_footer', lang), {
       reply_markup: {
         inline_keyboard: [
           [{ text: t('btn_connection_guide', lang), callback_data: 'connection_guide' }],
@@ -532,7 +535,7 @@ export async function handlePricingList(ctx) {
     return;
   }
 
-  const lines = plans.map((p) => `• ${p.title} — ${p.baseVolumeGB}GB / ${p.durationDays}روز — ${formatRials(p.basePrice, lang)}`);
+  const lines = plans.map((p) => `• ${p.title} — ${p.baseVolumeGB}GB / ${p.durationDays} — ${formatPlanPrice(p, lang)}`);
   await ctx.reply([t('pricing_title', lang), '', ...lines].join('\n'));
 }
 
@@ -620,7 +623,7 @@ export async function handlePlanSelection(ctx) {
     await ctx.reply(
       t('plan_selected_message', lang, {
         planTitle: plan.title,
-        price: formatRials(plan.basePrice, lang),
+        price: formatPlanPrice(plan, lang),
       }),
       {
         reply_markup: {
@@ -651,8 +654,10 @@ export async function handleCheckout(ctx) {
       [{ text: t('btn_wallet', lang), callback_data: `checkout_confirm_${planId}` }],
     ];
   } else {
+    // EN/RU users: cryptocurrency only (USD).
     inline_keyboard = [
-      [{ text: t('btn_crypto', lang), callback_data: 'crypto_payment' }],
+      [{ text: t('btn_crypto', lang), callback_data: `crypto_${planId}` }],
+      [{ text: t('btn_cancel', lang), callback_data: 'main_menu' }],
     ];
   }
   await ctx.editMessageText(t('select_payment_method', lang), {
@@ -669,7 +674,15 @@ export async function handleCryptoPayment(ctx) {
   const lang = ctx.lang || 'fa';
   if (ctx.callbackQuery) { try { await ctx.answerCbQuery(); } catch { /* ignore */ } }
   const contact = await SettingRepository.get('support.contact', '@hornet_support');
-  await ctx.reply(t('crypto_unavailable', lang, { contact }));
+  // The crypto button now carries the planId (crypto_<planId>) so we can show the
+  // USD price alongside the support contact until a crypto gateway is wired.
+  const planId = ctx.match?.[1];
+  let priceLine = '';
+  if (planId) {
+    const plan = await PlanRepository.findById(planId);
+    if (plan) priceLine = `\n\n💵 ${plan.title}: ${formatPlanPrice(plan, lang)}`;
+  }
+  await ctx.reply(`${t('crypto_unavailable', lang, { contact })}${priceLine}`);
 }
 
 export async function handleCheckoutConfirm(ctx) {
@@ -688,10 +701,11 @@ export async function handleCheckoutConfirm(ctx) {
     const activated = await subscriptionService.activateSubscription(subscription._id);
     const { tunnelConfig } = await ProvisioningService.provisionTunnelOnNode(activated, plan, user);
 
-    const subLink = `${config.backendUrl}/sub/${tunnelConfig.uuid}`;
     await ctx.reply(t('order_confirmed', lang));
-    await ctx.reply(t('get_config_ready', lang, { link: subLink }), {
-      reply_markup: generateClientPickerKeyboard(lang, activated._id).reply_markup,
+    // Deliver DIRECT configs (not a sub-link); wallet purchase is instant.
+    const ConfigDeliveryService = (await import('../../services/ConfigDeliveryService.js')).default;
+    await ConfigDeliveryService.deliverByUuid(ctx.telegram, ctx.from.id, tunnelConfig.uuid, {
+      lang, sub: activated,
     });
   } catch (err) {
     if (err.name === 'InsufficientBalanceError') {
@@ -713,7 +727,7 @@ export async function handleCardPayment(ctx) {
       return;
     }
 
-    const uniqueAmount = await PaymentService.generateUniqueAmount(plan.basePrice);
+    const uniqueAmount = await PaymentService.generateUniqueAmount(getPlanPrice(plan, 'fa').amount);
     const cardNumber = await SettingRepository.get('payment.cardNumber', config.cardNumber);
 
     ctx.session.pendingPlanId = planId;
@@ -756,7 +770,7 @@ export async function handleAutoCardPayment(ctx) {
     const Receipt = (await import('../../models/Receipt.js')).default;
     const user = await User.findOne({ telegramId: String(ctx.from.id) });
 
-    const uniqueAmount = await PaymentService.generateUniqueAmount(plan.basePrice);
+    const uniqueAmount = await PaymentService.generateUniqueAmount(getPlanPrice(plan, 'fa').amount);
     const cardNumber = await SettingRepository.get('payment.cardNumber', config.cardNumber);
 
     const receipt = await Receipt.create({
@@ -800,15 +814,32 @@ export async function handleIPaid(ctx) {
 
   await smartReply(ctx, t('i_paid_ack', lang));
 
-  // Queue two delayed payment-status checks (30s and 60s from now).
-  // The job handler in queue/handlers.js will send the result message.
   try {
+    const Receipt = (await import('../../models/Receipt.js')).default;
+    const receipt = await Receipt.findById(receiptId);
+    if (!receipt) return;
+
+    // Mark that the user claims to have paid — configs are ONLY delivered after
+    // this flag is set (and the payment is confirmed by the bank SMS).
+    if (!receipt.userClaimedPaid) {
+      receipt.userClaimedPaid = true;
+      await receipt.save();
+    }
+
+    // If the SMS already arrived and approved the payment, deliver immediately.
+    if (['approved', 'auto_approved', 'paid'].includes(receipt.status)) {
+      const ConfigDeliveryService = (await import('../../services/ConfigDeliveryService.js')).default;
+      await ConfigDeliveryService.deliverForReceipt(ctx.telegram, receipt);
+      return;
+    }
+
+    // Otherwise poll for confirmation (30s and 60s). The job delivers configs
+    // once the SMS matches and the payment is approved.
     const BullMQManager = (await import('../../queue/bullmq.js')).default;
-    const chatId = ctx.chat.id;
-    const jobData = { receiptId, chatId, lang, attempt: 1 };
-    await BullMQManager.addJob('default', 'check_payment', jobData, { delay: 30_000 });
+    await BullMQManager.addJob('default', 'check_payment',
+      { receiptId, chatId: ctx.chat.id, lang, attempt: 1 }, { delay: 30_000 });
   } catch (err) {
-    logger.error({ err }, '[bot] handleIPaid: failed to schedule payment check');
+    logger.error({ err }, '[bot] handleIPaid: failed');
   }
 }
 

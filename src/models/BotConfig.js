@@ -48,6 +48,16 @@ const customButtonSchema = new mongoose.Schema(
 
 const botConfigSchema = new mongoose.Schema({
   welcomeText: localizedTextSchema,
+  // Config-delivery message template (managed from the admin panel). Supports
+  // placeholders {{configs}} {{link}} {{volume}} {{days}}. Empty → localized default.
+  deliveryTemplate: localizedTextSchema,
+  // Bot commands / pre-start menu + description shown by Telegram before /start.
+  botCommands: {
+    type: [{ command: String, description: localizedTextSchema }],
+    default: [],
+  },
+  botDescription: localizedTextSchema,
+  botShortDescription: localizedTextSchema,
   smsBankRegex: String,
   cryptoPaymentEnabled: { type: Boolean, default: false },
   botMenus: [botMenuButtonSchema],

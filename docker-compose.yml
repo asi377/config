@@ -23,10 +23,14 @@ services:
     networks:
       - hornet-net
     healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      # mongosh startup is slow and can exceed a tight timeout under load, which
+      # flaps the container to "unhealthy" even though mongod is fine. Generous
+      # timeout/retries + start_period keep it stable.
+      test: ["CMD", "mongosh", "--quiet", "--norc", "--eval", "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
 
   redis:
     image: redis:7-alpine

@@ -154,11 +154,17 @@ export function createBot() {
 
   bot.action(/^category_(.+)$/,          userController.handleCategorySelection);
   bot.action(/^select_plan_(.+)$/,       userController.handlePlanSelection);
-  bot.action(/^checkout_(.+)$/,          userController.handleCheckout);
+  // checkout_confirm_ MUST be registered before checkout_ — Telegraf matches
+  // action patterns in registration order, and /^checkout_(.+)$/ also matches
+  // "checkout_confirm_<planId>" (capturing "confirm_<planId>"), which was
+  // silently swallowing every wallet-payment tap into handleCheckout instead
+  // of handleCheckoutConfirm (the wallet charge never fired).
   bot.action(/^checkout_confirm_(.+)$/,  userController.handleCheckoutConfirm);
+  bot.action(/^checkout_(.+)$/,          userController.handleCheckout);
   bot.action(/^cardpay_(.+)$/,           userController.handleCardPayment);
   bot.action(/^autocardpay_(.+)$/,       userController.handleAutoCardPayment);
   bot.action('crypto_payment',           userController.handleCryptoPayment);
+  bot.action(/^crypto_(.+)$/,            userController.handleCryptoPayment);
   bot.action(/^ipaid_(.+)$/,             userController.handleIPaid);
   bot.action(/^config_client_([a-z]+)_(.+)$/, userController.handleConfigClientPick);
   bot.action(/^extra_data_confirm_(\d+)_(.+)$/, userController.handleExtraDataConfirm);

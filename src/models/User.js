@@ -15,6 +15,11 @@ const userSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
+    // Captured from Telegram on each interaction so the admin panel can show a
+    // human name/username next to the numeric ID.
+    firstName: { type: String, default: '' },
+    lastName: { type: String, default: '' },
+    username: { type: String, default: '' },
     walletBalance: {
       type: Number,
       default: 0,

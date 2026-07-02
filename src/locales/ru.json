@@ -254,5 +254,14 @@
   "guide_ios_body": "🍎 *Инструкция для iOS*\n\n📥 *1) Установите:* Shadowrocket или Stash (App Store).\n🔗 *2) Скопируйте ссылку подписки.*\n➕ *3) Добавьте подписку* (тип Subscription).\n🟢 *4) Включите профиль VPN.*\n✅ *5) Подключитесь.*",
   "guide_windows_body": "🪟 *Инструкция для Windows*\n\n📥 *1) Установите:* Hiddify Next или v2rayN.\n🔗 *2) Скопируйте ссылку подписки.*\n➕ *3) Импортируйте ссылку* (Import from clipboard).\n🔄 *4) Обновите и выберите сервер.*\n✅ *5) Подключитесь.*",
   "btn_show_qr": "📷 Показать QR",
-  "sub_qr_caption": "📷 Отсканируйте QR в приложении VPN или скопируйте ссылку ниже:"
+  "sub_qr_caption": "📷 Отсканируйте QR в приложении VPN или скопируйте ссылку ниже:",
+  "config_delivery_header": "✅ Ваш сервис готов!\n\n📱 Скопируйте конфигурации ниже в приложение VPN:",
+  "config_delivery_no_nodes": "⚠️ Сейчас нет активного сервера. Обратитесь в поддержку.",
+  "config_delivery_footer": "Используйте кнопки ниже для инструкции или ваших подписок. 👇",
+  "referral_panel_title": "🤝 Приглашайте друзей и зарабатывайте",
+  "referral_panel_link": "🔗 Ваша ссылка:\n`{{link}}`",
+  "referral_panel_count": "👥 Рефералы: {{count}}",
+  "referral_panel_earnings": "💰 Всего заработано: {{commission}} Toman",
+  "reseller_panel_active": "⭐ Вы активный реселлер.",
+  "btn_reseller_panel": "📊 Мой кабинет реселлера"
 }

@@ -254,5 +254,14 @@
   "guide_ios_body": "🍎 *iOS connection guide*\n\n📥 *1) Install an app:*\n• Shadowrocket (paid): https://apps.apple.com/app/shadowrocket/id932747118\n• Stash: https://apps.apple.com/app/stash/id1596063349\n\n🔗 *2) Copy the subscription link*\nCopy it from “My Subscriptions”.\n\n➕ *3) Add subscription*\nShadowrocket: tap + → type Subscription → paste the link.\n\n🟢 *4) Enable the profile*\nSelect the subscription and turn the VPN on.\n\n✅ *5) Connect*\nAllow adding the VPN profile on first use.",
   "guide_windows_body": "🪟 *Windows connection guide*\n\n📥 *1) Install an app:*\n• Hiddify Next: https://github.com/hiddify/hiddify-next/releases/latest\n• v2rayN: https://github.com/2dust/v2rayN/releases/latest\n\n🔗 *2) Copy the subscription link*\n\n➕ *3) Import the link*\nv2rayN: Servers → “Import bulk URL from clipboard”.\nHiddify: “New Profile” → “Add from clipboard”.\n\n🔄 *4) Update & select a node*\n\n✅ *5) Connect*",
   "btn_show_qr": "📷 Show QR",
-  "sub_qr_caption": "📷 Scan this QR in your VPN app, or copy the link below:"
+  "sub_qr_caption": "📷 Scan this QR in your VPN app, or copy the link below:",
+  "config_delivery_header": "✅ Your service is ready!\n\n📱 Copy the config(s) below into your VPN app:",
+  "config_delivery_no_nodes": "⚠️ No active server available right now. Please contact support.",
+  "config_delivery_footer": "Use the buttons below for the connection guide or your subscriptions. 👇",
+  "referral_panel_title": "🤝 Invite friends & earn",
+  "referral_panel_link": "🔗 Your invite link:\n`{{link}}`",
+  "referral_panel_count": "👥 Referrals: {{count}}",
+  "referral_panel_earnings": "💰 Total earnings: {{commission}} Toman",
+  "reseller_panel_active": "⭐ You are an active reseller.",
+  "btn_reseller_panel": "📊 My reseller panel"
 }

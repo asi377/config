@@ -19,19 +19,26 @@ export async function createPlan(req, res, next) {
   try {
     const Plan = (await import('../../models/Plan.js')).default;
     const AuditLogRepository = (await import('../../repositories/AuditLogRepository.js')).default;
-    const { title, basePrice, baseVolumeGB, durationDays, maxSubLinks, type, pricing } = req.body;
+    const { title, subtitle, description, category, basePrice, baseVolumeGB, durationDays, maxSubLinks, type, pricing, prices, features, isTrial } = req.body;
 
-    if (!title || !basePrice || !baseVolumeGB || !durationDays || !type) {
+    if (!title || basePrice === undefined || !baseVolumeGB || !durationDays || !type) {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
 
     const plan = await Plan.create({
       title,
+      subtitle,
+      description,
+      category,
       basePrice,
       baseVolumeGB,
       durationDays,
       maxSubLinks: maxSubLinks || 1,
       type,
+      // 3-tier per-language pricing: fa → Toman, en/ru → USD.
+      prices: prices || {},
+      features: Array.isArray(features) ? features : undefined,
+      isTrial: !!isTrial,
       pricing: pricing || [{ currency: 'IRR', amount: basePrice, enabled: true }],
     });
 
@@ -51,7 +58,7 @@ export async function updatePlan(req, res, next) {
   try {
     const Plan = (await import('../../models/Plan.js')).default;
     const AuditLogRepository = (await import('../../repositories/AuditLogRepository.js')).default;
-    const allowed = ['title', 'basePrice', 'baseVolumeGB', 'durationDays', 'maxSubLinks', 'type', 'pricing', 'salesEnabled', 'visibility'];
+    const allowed = ['title', 'subtitle', 'description', 'category', 'basePrice', 'prices', 'baseVolumeGB', 'durationDays', 'maxSubLinks', 'type', 'pricing', 'features', 'isTrial', 'isActive', 'salesEnabled', 'visibility'];
     const updates = {};
 
     for (const key of allowed) {
